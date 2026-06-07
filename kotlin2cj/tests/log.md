@@ -1,9 +1,9 @@
 # kotlin2cj 测试日志
 
-- 用例总数: 187
-- 翻译成功: 187/187
-- 仓颉编译通过: 187/187
-- 运行输出匹配: 187/187
+- 用例总数: 213
+- 翻译成功: 213/213
+- 仓颉编译通过: 201/213
+- 运行输出匹配: 196/213
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
@@ -33,7 +33,7 @@
 | 113_counting_sort | ✅ | ✅ | ✅ |  |
 | 114_dp_lis | ✅ | ✅ | ✅ |  |
 | 115_dp_coin_change | ✅ | ✅ | ✅ |  |
-| 116_two_sum | ✅ | ✅ | ✅ |  |
+| 116_two_sum | ✅ | ✅ | ❌ | 输出不符: got='Two sum 9: [Some(0), 1]\nTwo sum 6: [Some(1), 2]\nTwo sum 6: [Some(0), 1]\n' want='Two sum 9: [0, 1]\nTwo sum 6: [1, 2]\nTwo sum 6: [0, 1]\n' |
 | 117_power_fast | ✅ | ✅ | ✅ |  |
 | 118_dp_edit_distance | ✅ | ✅ | ✅ |  |
 | 119_max_subarray | ✅ | ✅ | ✅ |  |
@@ -43,12 +43,12 @@
 | 122_topological_sort | ✅ | ✅ | ✅ |  |
 | 123_dp_lcs | ✅ | ✅ | ✅ |  |
 | 124_dijkstra | ✅ | ✅ | ✅ |  |
-| 125_roman_numerals | ✅ | ✅ | ✅ |  |
+| 125_roman_numerals | ✅ | ❌ | ❌ | [31merror[0m: invalid binary operator '<' on type 'Enum-Option<Int64>' and 'Enum-Option<Int64>' |
 | 126_palindrome | ✅ | ✅ | ✅ |  |
 | 127_nested_generics | ✅ | ✅ | ✅ |  |
 | 128_try_catch_complex | ✅ | ✅ | ✅ |  |
 | 129_multiple_interfaces | ✅ | ✅ | ✅ |  |
-| 12_map | ✅ | ✅ | ✅ |  |
+| 12_map | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
 | 130_string_edge_cases | ✅ | ✅ | ✅ |  |
 | 131_nullable_chains | ✅ | ✅ | ✅ |  |
 | 132_when_complex | ✅ | ✅ | ✅ |  |
@@ -56,7 +56,7 @@
 | 134_higher_order_funcs | ✅ | ✅ | ✅ |  |
 | 135_data_class_advanced | ✅ | ✅ | ✅ |  |
 | 136_stringbuilder_heavy | ✅ | ✅ | ✅ |  |
-| 137_hashmap_advanced | ✅ | ✅ | ✅ |  |
+| 137_hashmap_advanced | ✅ | ❌ | ❌ | [31merror[0m: 'add' is not a member of enum 'Option<Class-ArrayList<Struct-String>>' |
 | 138_recursive_expr | ✅ | ✅ | ✅ |  |
 | 139_stack_queue | ✅ | ✅ | ✅ |  |
 | 13_nested_loop | ✅ | ✅ | ✅ |  |
@@ -72,10 +72,10 @@
 | 149_bank_accounts | ✅ | ✅ | ✅ |  |
 | 14_boolean | ✅ | ✅ | ✅ |  |
 | 150_event_simulator | ✅ | ✅ | ✅ |  |
-| 151_anagram_groups | ✅ | ✅ | ✅ |  |
+| 151_anagram_groups | ✅ | ❌ | ❌ | [31merror[0m: 'add' is not a member of enum 'Option<Class-ArrayList<Struct-String>>' |
 | 152_min_heap | ✅ | ✅ | ✅ |  |
 | 153_trie | ✅ | ✅ | ✅ |  |
-| 154_lru_cache | ✅ | ✅ | ✅ |  |
+| 154_lru_cache | ✅ | ❌ | ❌ | [31merror[0m: mismatched types |
 | 155_expr_tokenizer | ✅ | ✅ | ✅ |  |
 | 156_union_find | ✅ | ✅ | ✅ |  |
 | 157_statistics | ✅ | ✅ | ✅ |  |
@@ -84,7 +84,7 @@
 | 15_class | ✅ | ✅ | ✅ |  |
 | 160_custom_iterator | ✅ | ✅ | ✅ |  |
 | 161_multireturn_logic | ✅ | ✅ | ✅ |  |
-| 162_collection_format | ✅ | ✅ | ✅ |  |
+| 162_collection_format | ✅ | ✅ | ❌ | 输出不符: got='apple: Some(3)\nbanana: Some(2)\ncherry: Some(1)\n1 2 3\n4 5 6\n7 8 9\n1-2-3-4-5\n' want='apple: 3\nbanana: 2\ncherry: 1\n1 2 3\n4 5 6\n7 8 9\n1-2-3-4-5\n' |
 | 163_polymorphism_deep | ✅ | ✅ | ✅ |  |
 | 164_recursive_algo | ✅ | ✅ | ✅ |  |
 | 165_enum_direction | ✅ | ✅ | ✅ |  |
@@ -93,7 +93,7 @@
 | 168_game_of_life | ✅ | ✅ | ✅ |  |
 | 169_enum_ctor_params | ✅ | ✅ | ✅ |  |
 | 16_class_mut | ✅ | ✅ | ✅ |  |
-| 170_hashmap_entry | ✅ | ✅ | ✅ |  |
+| 170_hashmap_entry | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
 | 171_while_true_return | ✅ | ✅ | ✅ |  |
 | 172_companion_object | ✅ | ✅ | ✅ |  |
 | 173_extension_func | ✅ | ✅ | ✅ |  |
@@ -112,9 +112,35 @@
 | 185_string_ops | ✅ | ✅ | ✅ |  |
 | 186_combined_p1p2 | ✅ | ✅ | ✅ |  |
 | 187_collection_ops2 | ✅ | ✅ | ✅ |  |
+| 188_secondary_constructor | ✅ | ✅ | ✅ |  |
+| 189_destructured_lambda | ✅ | ✅ | ✅ |  |
 | 18_break_continue | ✅ | ✅ | ✅ |  |
+| 190_run_block_expr | ✅ | ✅ | ✅ |  |
+| 191_dollar_string_literal | ✅ | ✅ | ✅ |  |
+| 192_primary_constructor_modifier | ✅ | ✅ | ✅ |  |
+| 193_spread_argument | ✅ | ✅ | ✅ |  |
+| 194_multiline_condition | ✅ | ✅ | ✅ |  |
+| 195_unicode_string_escape | ✅ | ✅ | ✅ |  |
+| 196_keyword_with_member | ✅ | ✅ | ✅ |  |
+| 197_nested_class_lift | ✅ | ✅ | ✅ |  |
+| 198_companion_field_name_conflict | ✅ | ✅ | ✅ |  |
+| 199_ksoup_scalar_types | ✅ | ✅ | ✅ |  |
 | 19_string_ops | ✅ | ✅ | ✅ |  |
+| 200_string_index_code_subsequence | ✅ | ✅ | ✅ |  |
+| 201_nullable_lookup_shadow | ✅ | ✅ | ✅ |  |
+| 202_char_surrogate_methods | ✅ | ✅ | ✅ |  |
+| 203_array_spread_concat | ✅ | ✅ | ✅ |  |
+| 204_enum_hashset_vararg_field | ✅ | ✅ | ✅ |  |
+| 205_to_string_radix | ✅ | ✅ | ✅ |  |
+| 206_object_field_init_method | ✅ | ✅ | ✅ |  |
+| 207_object_static_method_call | ✅ | ✅ | ✅ |  |
+| 208_object_static_field_access | ✅ | ✅ | ✅ |  |
+| 209_stringbuilder_append_rune | ✅ | ✅ | ✅ |  |
 | 20_char | ✅ | ✅ | ✅ |  |
+| 210_companion_field_init_ref | ✅ | ✅ | ✅ |  |
+| 211_ushort_supplementary_prefix | ✅ | ✅ | ✅ |  |
+| 212_supplementary_string_slice | ✅ | ✅ | ✅ |  |
+| 213_supplementary_codepoint_tochars | ✅ | ✅ | ✅ |  |
 | 21_bubble_sort | ✅ | ✅ | ✅ |  |
 | 22_gcd | ✅ | ✅ | ✅ |  |
 | 23_primes | ✅ | ✅ | ✅ |  |
@@ -131,7 +157,7 @@
 | 34_float | ✅ | ✅ | ✅ |  |
 | 35_do_while | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
 | 36_repeat | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 37_map_destructure | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
+| 37_map_destructure | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
 | 38_nullable | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
 | 39_when_expr | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
 | 40_if_expr | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
@@ -151,12 +177,12 @@
 | 54_when_string | ✅ | ✅ | ✅ |  |
 | 55_class_methods | ✅ | ✅ | ✅ |  |
 | 56_collatz | ✅ | ✅ | ✅ |  |
-| 57_nested_collections | ✅ | ✅ | ✅ |  |
+| 57_nested_collections | ✅ | ❌ | ❌ | [31merror[0m: 'add' is not a member of enum 'Option<Class-ArrayList<Int64>>' |
 | 58_hex_binary | ✅ | ✅ | ✅ |  |
 | 59_sealed_eval | ✅ | ✅ | ✅ |  |
 | 60_when_is_shape | ✅ | ✅ | ✅ |  |
-| 61_destructure | ✅ | ✅ | ✅ |  |
-| 62_safe_let | ✅ | ✅ | ✅ |  |
+| 61_destructure | ✅ | ❌ | ❌ | [31merror[0m: cannot convert an integer literal to type 'Struct-String' |
+| 62_safe_let | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
 | 63_string_methods2 | ✅ | ✅ | ✅ |  |
 | 64_word_count | ✅ | ✅ | ✅ |  |
 | 65_stack_generic | ✅ | ✅ | ✅ |  |
@@ -173,14 +199,14 @@
 | 76_enum_ops | ✅ | ✅ | ✅ |  |
 | 77_library | ✅ | ✅ | ✅ |  |
 | 78_matrix | ✅ | ✅ | ✅ |  |
-| 79_map_values | ✅ | ✅ | ✅ |  |
+| 79_map_values | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
 | 80_string_scan | ✅ | ✅ | ✅ |  |
-| 81_cards | ✅ | ✅ | ✅ |  |
-| 82_large_orders | ✅ | ✅ | ✅ |  |
-| 83_large_school | ✅ | ✅ | ✅ |  |
+| 81_cards | ✅ | ✅ | ❌ | 输出不符: got='cards=26\ntotal=170\nhearts=13\n5 -> small\n-3 -> neg\n0 -> zero\n42 -> big\n7 -> small\nsum=51 max=42 min=-3\nfibs=0,1,1,2,3,5,8,13,21,34,55\nbyLen=date apple banana cherry\nlong=apple,ban |
+| 82_large_orders | ✅ | ✅ | ❌ | 输出不符: got='=== Catalog ===\n1. Kotlin in Action [Books] $45.00\n2. Apple [Groceries] $0.50\n3. Lego Set [Toys] $80.00\n4. Headphones [Electronics] $120.00\n5. Cookbook [Books] $30.00\n6. Bread [Grocer |
+| 83_large_school | ✅ | ✅ | ❌ | 输出不符: got='Student #1 Alice (grade 10)\nStudent #2 Bob (grade 11)\nStudent #3 Carol (grade 10)\nStudent(id=1, name=Alice, grade=10)\nTotal scores recorded: 8\nAlice avg=85 -> B\nBob avg=77 -> C\nCarol |
 | 84_large_bank | ✅ | ✅ | ✅ |  |
 | 85_large_toolkit | ✅ | ✅ | ✅ |  |
-| 86_payroll | ✅ | ✅ | ✅ |  |
+| 86_payroll | ✅ | ❌ | ❌ | [31merror[0m: type of left operand does not support coalescing operation. coalescing is only valid for 'Option' |
 | 87_calculator | ✅ | ✅ | ✅ |  |
 | 88_graph | ✅ | ✅ | ✅ |  |
 | 89_life | ✅ | ✅ | ✅ |  |

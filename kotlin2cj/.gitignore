@@ -1,5 +1,8 @@
 /target
 /tests/generated
+/.cache
+/.vscode
+/log.txt
 __pycache__/
 *.pyc
 /tests/cangjie/*/target/

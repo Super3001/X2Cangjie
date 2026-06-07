@@ -21,7 +21,13 @@ type PResult<T> = Result<T, String>;
 
 impl Parser {
     pub fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, g: Graph::new(), scopes: vec![HashMap::new()], type_aliases: HashMap::new() }
+        Parser {
+            toks,
+            pos: 0,
+            g: Graph::new(),
+            scopes: vec![HashMap::new()],
+            type_aliases: HashMap::new(),
+        }
     }
 
     // ---- Token 游标 ----
@@ -59,7 +65,12 @@ impl Parser {
         if self.eat_sym(s) {
             Ok(())
         } else {
-            Err(format!("line {}: 期望 '{}'，但得到 {:?}", self.line(), s, self.peek()))
+            Err(format!(
+                "line {}: 期望 '{}'，但得到 {:?}",
+                self.line(),
+                s,
+                self.peek()
+            ))
         }
     }
     fn eat_kw(&mut self, s: &str) -> bool {
@@ -89,7 +100,10 @@ impl Parser {
         self.scopes.pop();
     }
     fn declare(&mut self, name: &str, node: NodeId) {
-        self.scopes.last_mut().unwrap().insert(name.to_string(), node);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert(name.to_string(), node);
     }
     fn resolve(&self, name: &str) -> Option<NodeId> {
         for s in self.scopes.iter().rev() {
@@ -129,7 +143,9 @@ impl Parser {
             self.parse_fun(&mods)
         } else if self.is_kw("enum") {
             self.parse_enum()
-        } else if self.is_kw("class") || self.is_kw("data") || self.is_kw("object")
+        } else if self.is_kw("class")
+            || self.is_kw("data")
+            || self.is_kw("object")
             || self.is_kw("interface")
         {
             self.parse_class(&mods)
@@ -143,9 +159,26 @@ impl Parser {
 
     fn skip_modifiers(&mut self) -> Vec<String> {
         const MODS: &[&str] = &[
-            "public", "private", "internal", "protected", "open", "final", "abstract",
-            "override", "inline", "data", "sealed", "const", "lateinit", "tailrec",
-            "crossinline", "noinline", "infix", "operator", "suspend", "external",
+            "public",
+            "private",
+            "internal",
+            "protected",
+            "open",
+            "final",
+            "abstract",
+            "override",
+            "inline",
+            "data",
+            "sealed",
+            "const",
+            "lateinit",
+            "tailrec",
+            "crossinline",
+            "noinline",
+            "infix",
+            "operator",
+            "suspend",
+            "external",
             "annotation",
         ];
         let mut seen = Vec::new();
@@ -172,7 +205,10 @@ impl Parser {
         self.skip_newlines();
         let ty = self.parse_type()?;
         self.type_aliases.insert(name.clone(), ty.clone());
-        Ok(self.g.add(Kind::TypeAlias { name, target_type: ty }))
+        Ok(self.g.add(Kind::TypeAlias {
+            name,
+            target_type: ty,
+        }))
     }
 
     /// Parse generic type parameters `<T>` / `<T, U>` / `<T : Bound>`.
@@ -246,37 +282,8 @@ impl Parser {
             generic_params.clear();
         }
         self.push_scope();
-        let mut params = Vec::new();
+        let params = self.parse_param_nodes()?;
         // 扩展函数中 `this` 自然引用接收者，无需特殊处理
-        self.expect_sym("(")?;
-        self.skip_newlines();
-        while !self.is_sym(")") {
-            // Handle vararg parameter
-            let is_vararg = self.eat_kw("vararg");
-            let pname = self.expect_ident()?;
-            self.expect_sym(":")?;
-            let ty = if is_vararg {
-                let base_ty = self.parse_type()?;
-                format!("Array<{}>", base_ty)
-            } else {
-                self.parse_type()?
-            };
-            let default = if self.eat_sym("=") {
-                Some(self.parse_expr()?)
-            } else {
-                None
-            };
-            let nn = self.g.add(Kind::Name { original: pname.clone() });
-            let pid = self.g.add(Kind::Param { name_node: nn, ty, default });
-            self.declare(&pname, nn);
-            params.push(pid);
-            self.skip_newlines();
-            if !self.eat_sym(",") {
-                break;
-            }
-            self.skip_newlines();
-        }
-        self.expect_sym(")")?;
         let mut ret = None;
         if self.eat_sym(":") {
             ret = Some(self.parse_type()?);
@@ -313,6 +320,46 @@ impl Parser {
         }))
     }
 
+    fn parse_param_nodes(&mut self) -> PResult<Vec<NodeId>> {
+        let mut params = Vec::new();
+        self.expect_sym("(")?;
+        self.skip_newlines();
+        while !self.is_sym(")") {
+            self.skip_modifiers();
+            let is_vararg = self.eat_kw("vararg");
+            let pname = self.expect_ident()?;
+            self.expect_sym(":")?;
+            let ty = if is_vararg {
+                let base_ty = self.parse_type()?;
+                format!("Array<{}>", base_ty)
+            } else {
+                self.parse_type()?
+            };
+            let default = if self.eat_sym("=") {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            let nn = self.g.add(Kind::Name {
+                original: pname.clone(),
+            });
+            let pid = self.g.add(Kind::Param {
+                name_node: nn,
+                ty,
+                default,
+            });
+            self.declare(&pname, nn);
+            params.push(pid);
+            self.skip_newlines();
+            if !self.eat_sym(",") {
+                break;
+            }
+            self.skip_newlines();
+        }
+        self.expect_sym(")")?;
+        Ok(params)
+    }
+
     // ---- 枚举 ----
     fn parse_enum(&mut self) -> PResult<NodeId> {
         self.eat_kw("enum");
@@ -342,7 +389,12 @@ impl Parser {
                 } else {
                     None
                 };
-                params.push(CtorParam { kind, name: safe_name(&pname), ty, default });
+                params.push(CtorParam {
+                    kind,
+                    name: safe_name(&pname),
+                    ty,
+                    default,
+                });
                 self.skip_newlines();
                 if !self.eat_sym(",") {
                     break;
@@ -364,8 +416,11 @@ impl Parser {
                     let mut depth = 1;
                     self.bump();
                     while depth > 0 && !self.at_eof() {
-                        if self.is_sym("<") { depth += 1; }
-                        else if self.is_sym(">") { depth -= 1; }
+                        if self.is_sym("<") {
+                            depth += 1;
+                        } else if self.is_sym(">") {
+                            depth -= 1;
+                        }
                         self.bump();
                     }
                 }
@@ -400,7 +455,10 @@ impl Parser {
                 }
                 self.expect_sym(")")?;
             }
-            entries.push(EnumEntry { name: entry_name, args: entry_args });
+            entries.push(EnumEntry {
+                name: entry_name,
+                args: entry_args,
+            });
             self.skip_newlines();
             if !self.eat_sym(",") {
                 break;
@@ -437,7 +495,11 @@ impl Parser {
             }
         }
         self.expect_sym("}")?;
-        Ok(self.g.add(Kind::Enum { name: safe_name(&name), entries, params }))
+        Ok(self.g.add(Kind::Enum {
+            name: safe_name(&name),
+            entries,
+            params,
+        }))
     }
 
     fn skip_balanced_parens(&mut self) {
@@ -490,11 +552,14 @@ impl Parser {
                 }
             }
         }
+        self.skip_modifiers();
+        self.eat_kw("constructor");
         let mut ctor_params = Vec::new();
         if self.eat_sym("(") {
             self.skip_newlines();
             while !self.is_sym(")") {
                 self.skip_modifiers();
+                let is_vararg = self.eat_kw("vararg");
                 let kind = if self.eat_kw("val") {
                     CtorParamKind::Val
                 } else if self.eat_kw("var") {
@@ -504,14 +569,24 @@ impl Parser {
                 };
                 let pname = self.expect_ident()?;
                 self.expect_sym(":")?;
-                let ty = self.parse_type()?;
+                let ty = if is_vararg {
+                    let base_ty = self.parse_type()?;
+                    format!("Array<{}>", base_ty)
+                } else {
+                    self.parse_type()?
+                };
                 // 解析默认值
                 let default = if self.eat_sym("=") {
                     Some(self.parse_expr()?)
                 } else {
                     None
                 };
-                ctor_params.push(CtorParam { kind, name: safe_name(&pname), ty, default });
+                ctor_params.push(CtorParam {
+                    kind,
+                    name: safe_name(&pname),
+                    ty,
+                    default,
+                });
                 self.skip_newlines();
                 if !self.eat_sym(",") {
                     break;
@@ -568,6 +643,8 @@ impl Parser {
                 let mmods = self.skip_modifiers();
                 if self.is_kw("fun") {
                     members.push(self.parse_fun(&mmods)?);
+                } else if self.is_kw("constructor") {
+                    members.push(self.parse_secondary_constructor()?);
                 } else if self.is_kw("val") || self.is_kw("var") {
                     members.push(self.parse_var_decl()?);
                 } else if self.is_kw("init") {
@@ -610,22 +687,13 @@ impl Parser {
                         }
                         self.expect_sym("}")?;
                     }
-                } else if self.is_kw("class") || self.is_kw("object") || self.is_kw("enum") {
-                    // 嵌套类/对象：跳过
-                    self.bump();
-                    if matches!(self.peek(), Tok::Ident(_)) {
-                        self.bump(); // name
-                    }
-                    if self.is_sym("{") {
-                        let mut depth = 1;
-                        self.bump();
-                        while depth > 0 && !self.at_eof() {
-                            if self.is_sym("{") { depth += 1; }
-                            else if self.is_sym("}") { depth -= 1; }
-                            if depth > 0 { self.bump(); }
-                        }
-                        if self.is_sym("}") { self.bump(); }
-                    }
+                } else if self.is_kw("class") || self.is_kw("object") || self.is_kw("interface") {
+                    // Cangjie does not support class declarations inside class bodies.
+                    // Preserve Kotlin nested classes by parsing them here and letting the
+                    // renderer lift them to the surrounding top-level output.
+                    members.push(self.parse_class(&mmods)?);
+                } else if self.is_kw("enum") {
+                    members.push(self.parse_enum()?);
                 } else {
                     self.bump();
                 }
@@ -637,7 +705,9 @@ impl Parser {
         let _ = is_object;
         let is_singleton = is_object;
         let is_abstract = mods.iter().any(|m| m == "abstract");
-        let is_open = mods.iter().any(|m| m == "open" || m == "abstract" || m == "sealed");
+        let is_open = mods
+            .iter()
+            .any(|m| m == "open" || m == "abstract" || m == "sealed");
         Ok(self.g.add(Kind::Class {
             name: safe_name(&name),
             ctor_params,
@@ -653,6 +723,42 @@ impl Parser {
             init_block,
             companion_members,
             is_singleton,
+        }))
+    }
+
+    fn parse_secondary_constructor(&mut self) -> PResult<NodeId> {
+        self.eat_kw("constructor");
+        self.push_scope();
+        let params = self.parse_param_nodes()?;
+        self.skip_newlines();
+        let delegate = if self.eat_sym(":") {
+            self.skip_newlines();
+            let target = if self.eat_kw("this") {
+                "this".to_string()
+            } else if self.eat_kw("super") {
+                "super".to_string()
+            } else {
+                return Err(format!(
+                    "line {}: constructor 之后期望 this(...) 或 super(...)",
+                    self.line()
+                ));
+            };
+            let args = self.parse_args_no_trailing_lambda()?;
+            Some(ConstructorDelegate { target, args })
+        } else {
+            None
+        };
+        self.skip_newlines();
+        let body = if self.is_sym("{") {
+            self.parse_block()?
+        } else {
+            self.g.add(Kind::Block { stmts: Vec::new() })
+        };
+        self.pop_scope();
+        Ok(self.g.add(Kind::SecondaryConstructor {
+            params,
+            delegate,
+            body,
         }))
     }
 
@@ -679,7 +785,10 @@ impl Parser {
         }
         if self.is_kw("return") {
             self.bump();
-            if matches!(self.peek(), Tok::Newline | Tok::Eof) || self.is_sym("}") || self.is_sym(";") {
+            if matches!(self.peek(), Tok::Newline | Tok::Eof)
+                || self.is_sym("}")
+                || self.is_sym(";")
+            {
                 return Ok(self.g.add(Kind::Return { value: None }));
             }
             let e = self.parse_expr()?;
@@ -719,14 +828,22 @@ impl Parser {
             let op = if self.is_sym("++") { "+=" } else { "-=" };
             self.bump();
             let one = self.g.add(Kind::IntLit("1".into()));
-            return Ok(self.g.add(Kind::Assign { target: e, op: op.into(), value: one }));
+            return Ok(self.g.add(Kind::Assign {
+                target: e,
+                op: op.into(),
+                value: one,
+            }));
         }
         if let Tok::Sym(op) = self.peek().clone() {
             if matches!(op.as_str(), "=" | "+=" | "-=" | "*=" | "/=" | "%=") {
                 self.bump();
                 self.skip_newlines();
                 let val = self.parse_expr()?;
-                return Ok(self.g.add(Kind::Assign { target: e, op, value: val }));
+                return Ok(self.g.add(Kind::Assign {
+                    target: e,
+                    op,
+                    value: val,
+                }));
             }
         }
         Ok(self.g.add(Kind::ExprStmt { expr: e }))
@@ -749,7 +866,9 @@ impl Parser {
                 if self.eat_sym(":") {
                     self.parse_type()?;
                 }
-                let nn = self.g.add(Kind::Name { original: nm.clone() });
+                let nn = self.g.add(Kind::Name {
+                    original: nm.clone(),
+                });
                 name_nodes.push((nm, nn));
                 if !self.eat_sym(",") {
                     break;
@@ -764,7 +883,11 @@ impl Parser {
                 self.declare(nm, *nn);
             }
             let names: Vec<NodeId> = name_nodes.into_iter().map(|(_, nn)| nn).collect();
-            return Ok(self.g.add(Kind::DestructureDecl { mutable, names, init }));
+            return Ok(self.g.add(Kind::DestructureDecl {
+                mutable,
+                names,
+                init,
+            }));
         }
         let name = self.expect_ident()?;
         let mut ty = None;
@@ -802,21 +925,37 @@ impl Parser {
                 init = Some(self.parse_expr()?);
             }
         }
-        let name_node = self.g.add(Kind::Name { original: name.clone() });
+        let name_node = self.g.add(Kind::Name {
+            original: name.clone(),
+        });
         self.declare(&name, name_node);
-        Ok(self.g.add(Kind::VarDecl { mutable, name_node, ty, init, is_lazy }))
+        Ok(self.g.add(Kind::VarDecl {
+            mutable,
+            name_node,
+            ty,
+            init,
+            is_lazy,
+        }))
     }
 
     /// Wrap a lambda body (Block) as an IIFE expression `({ => body })()`
     fn wrap_lambda_body_as_expr(&mut self, body: NodeId) -> NodeId {
-        let lam = self.g.add(Kind::Lambda { params: vec![], body });
-        self.g.add(Kind::Call { callee: lam, args: vec![] })
+        let lam = self.g.add(Kind::Lambda {
+            params: vec![],
+            body,
+        });
+        self.g.add(Kind::Call {
+            callee: lam,
+            args: vec![],
+        })
     }
 
     fn parse_while(&mut self) -> PResult<NodeId> {
         self.eat_kw("while");
         self.expect_sym("(")?;
+        self.skip_newlines();
         let cond = self.parse_expr()?;
+        self.skip_newlines();
         self.expect_sym(")")?;
         self.skip_newlines();
         let body = self.parse_block_or_stmt()?;
@@ -832,7 +971,9 @@ impl Parser {
             return Err(format!("line {}: do 之后期望 while", self.line()));
         }
         self.expect_sym("(")?;
+        self.skip_newlines();
         let cond = self.parse_expr()?;
+        self.skip_newlines();
         self.expect_sym(")")?;
         Ok(self.g.add(Kind::DoWhile { body, cond }))
     }
@@ -854,11 +995,17 @@ impl Parser {
                 self.expect_sym(")")?;
                 self.skip_newlines();
                 self.push_scope();
-                let nn = self.g.add(Kind::Name { original: name.clone() });
+                let nn = self.g.add(Kind::Name {
+                    original: name.clone(),
+                });
                 self.declare(&name, nn);
                 let cbody = self.parse_block()?;
                 self.pop_scope();
-                catches.push(CatchClause { name: safe_name(&name), ty, body: cbody });
+                catches.push(CatchClause {
+                    name: safe_name(&name),
+                    ty,
+                    body: cbody,
+                });
             } else if self.eat_kw("finally") {
                 self.skip_newlines();
                 finally = Some(self.parse_block()?);
@@ -867,7 +1014,11 @@ impl Parser {
                 break;
             }
         }
-        Ok(self.g.add(Kind::Try { body, catches, finally }))
+        Ok(self.g.add(Kind::Try {
+            body,
+            catches,
+            finally,
+        }))
     }
 
     fn skip_newlines_for_kw(&mut self, kw: &str) {
@@ -888,7 +1039,9 @@ impl Parser {
             let mut name_nodes = Vec::new();
             loop {
                 let nm = self.expect_ident()?;
-                let nn = self.g.add(Kind::Name { original: nm.clone() });
+                let nn = self.g.add(Kind::Name {
+                    original: nm.clone(),
+                });
                 self.declare(&nm, nn);
                 name_nodes.push(nn);
                 if !self.eat_sym(",") {
@@ -904,11 +1057,17 @@ impl Parser {
             self.skip_newlines();
             let body = self.parse_block_or_stmt()?;
             self.pop_scope();
-            return Ok(self.g.add(Kind::ForEach { var, iter: iter_expr, body }));
+            return Ok(self.g.add(Kind::ForEach {
+                var,
+                iter: iter_expr,
+                body,
+            }));
         }
         let var_name = self.expect_ident()?;
         self.eat_kw("in");
-        let var_node = self.g.add(Kind::Name { original: var_name.clone() });
+        let var_node = self.g.add(Kind::Name {
+            original: var_name.clone(),
+        });
         self.declare(&var_name, var_node);
         let var = self.g.add(Kind::VarDecl {
             mutable: false,
@@ -924,9 +1083,17 @@ impl Parser {
         let body = self.parse_block_or_stmt()?;
         self.pop_scope();
         if matches!(self.g.kind(iter_expr), Kind::Range { .. }) {
-            Ok(self.g.add(Kind::ForRange { var, range: iter_expr, body }))
+            Ok(self.g.add(Kind::ForRange {
+                var,
+                range: iter_expr,
+                body,
+            }))
         } else {
-            Ok(self.g.add(Kind::ForEach { var, iter: iter_expr, body }))
+            Ok(self.g.add(Kind::ForEach {
+                var,
+                iter: iter_expr,
+                body,
+            }))
         }
     }
 
@@ -951,6 +1118,8 @@ impl Parser {
     ) -> PResult<NodeId> {
         let mut lhs = next(self)?;
         loop {
+            let save = self.pos;
+            self.skip_newlines();
             let mut matched = None;
             if let Tok::Sym(s) = self.peek() {
                 if ops.contains(&s.as_str()) {
@@ -964,7 +1133,10 @@ impl Parser {
                     let rhs = next(self)?;
                     lhs = self.g.add(Kind::Binary { op, lhs, rhs });
                 }
-                None => break,
+                None => {
+                    self.pos = save;
+                    break;
+                }
             }
         }
         Ok(lhs)
@@ -991,14 +1163,22 @@ impl Parser {
             if self.is_kw("is") {
                 self.bump();
                 let ty = self.parse_type()?;
-                lhs = self.g.add(Kind::IsCheck { expr: lhs, ty, negate: false });
+                lhs = self.g.add(Kind::IsCheck {
+                    expr: lhs,
+                    ty,
+                    negate: false,
+                });
                 continue;
             }
             if self.is_sym("!") && self.peek_next_is_kw("is") {
                 self.bump(); // !
                 self.bump(); // is
                 let ty = self.parse_type()?;
-                lhs = self.g.add(Kind::IsCheck { expr: lhs, ty, negate: true });
+                lhs = self.g.add(Kind::IsCheck {
+                    expr: lhs,
+                    ty,
+                    negate: true,
+                });
                 continue;
             }
             // `as T` / `as? T` 类型转换
@@ -1006,7 +1186,11 @@ impl Parser {
                 self.bump();
                 let safe = self.eat_sym("?");
                 let ty = self.parse_type()?;
-                lhs = self.g.add(Kind::TypeCast { expr: lhs, ty, safe });
+                lhs = self.g.add(Kind::TypeCast {
+                    expr: lhs,
+                    ty,
+                    safe,
+                });
                 continue;
             }
             let negate = if self.is_sym("!") && self.peek_next_is_kw("in") {
@@ -1020,7 +1204,11 @@ impl Parser {
                 self.skip_newlines();
                 let rhs = self.parse_elvis()?;
                 let op = if negate { "!in" } else { "in" };
-                lhs = self.g.add(Kind::Binary { op: op.into(), lhs, rhs });
+                lhs = self.g.add(Kind::Binary {
+                    op: op.into(),
+                    lhs,
+                    rhs,
+                });
             } else {
                 if negate {
                     // 回退：把消费掉的 `!` 当作错误，理论上不会到这里
@@ -1041,7 +1229,11 @@ impl Parser {
                 self.bump();
                 self.skip_newlines();
                 let rhs = self.parse_range()?;
-                lhs = self.g.add(Kind::Binary { op: "to".into(), lhs, rhs });
+                lhs = self.g.add(Kind::Binary {
+                    op: "to".into(),
+                    lhs,
+                    rhs,
+                });
                 continue;
             }
             // 命名中缀位运算：and / or / xor / shl / shr / ushr
@@ -1060,7 +1252,11 @@ impl Parser {
                 self.bump();
                 self.skip_newlines();
                 let rhs = self.parse_range()?;
-                lhs = self.g.add(Kind::Binary { op: op.into(), lhs, rhs });
+                lhs = self.g.add(Kind::Binary {
+                    op: op.into(),
+                    lhs,
+                    rhs,
+                });
                 continue;
             }
             break;
@@ -1092,7 +1288,13 @@ impl Parser {
         if self.eat_kw("step") {
             step = Some(self.parse_additive()?);
         }
-        Ok(self.g.add(Kind::Range { lo, hi, inclusive, down, step }))
+        Ok(self.g.add(Kind::Range {
+            lo,
+            hi,
+            inclusive,
+            down,
+            step,
+        }))
     }
 
     fn parse_additive(&mut self) -> PResult<NodeId> {
@@ -1103,12 +1305,19 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> PResult<NodeId> {
-        if self.is_sym("!") || self.is_sym("-") || self.is_sym("+") {
-            let op = if let Tok::Sym(s) = self.bump() { s } else { unreachable!() };
+        if self.is_sym("!") || self.is_sym("-") || self.is_sym("+") || self.is_sym("*") {
+            let op = if let Tok::Sym(s) = self.bump() {
+                s
+            } else {
+                unreachable!()
+            };
             self.skip_newlines();
             let e = self.parse_unary()?;
             if op == "+" {
                 return Ok(e);
+            }
+            if op == "*" {
+                return Ok(self.g.add(Kind::Spread { expr: e }));
             }
             return Ok(self.g.add(Kind::Unary { op, expr: e }));
         }
@@ -1133,7 +1342,11 @@ impl Parser {
                 let name = self.expect_ident()?;
                 if self.is_sym("(") {
                     let args = self.parse_args()?;
-                    let m = self.g.add(Kind::Member { base: e, name, safe });
+                    let m = self.g.add(Kind::Member {
+                        base: e,
+                        name,
+                        safe,
+                    });
                     e = self.g.add(Kind::Call { callee: m, args });
                 } else if self.is_sym("{") {
                     // 无括号尾随 lambda：recv.method { ... }
@@ -1155,11 +1368,22 @@ impl Parser {
                         // recv.run { body } → { let _r = recv; body }
                         e = self.build_run(e, lam);
                     } else {
-                        let m = self.g.add(Kind::Member { base: e, name, safe });
-                        e = self.g.add(Kind::Call { callee: m, args: vec![lam] });
+                        let m = self.g.add(Kind::Member {
+                            base: e,
+                            name,
+                            safe,
+                        });
+                        e = self.g.add(Kind::Call {
+                            callee: m,
+                            args: vec![lam],
+                        });
                     }
                 } else {
-                    e = self.g.add(Kind::Member { base: e, name, safe });
+                    e = self.g.add(Kind::Member {
+                        base: e,
+                        name,
+                        safe,
+                    });
                 }
             } else if self.is_sym("(") {
                 let args = self.parse_args()?;
@@ -1168,7 +1392,10 @@ impl Parser {
                 self.bump();
                 let idx = self.parse_expr()?;
                 self.expect_sym("]")?;
-                e = self.g.add(Kind::Index { base: e, index: idx });
+                e = self.g.add(Kind::Index {
+                    base: e,
+                    index: idx,
+                });
             } else if self.is_sym("!") && self.peek_next_is_bang() {
                 // !! 非空断言 → ForceUnwrap
                 self.bump();
@@ -1181,7 +1408,8 @@ impl Parser {
         Ok(e)
     }
 
-    fn build_for_each(&mut self, recv: NodeId, lam: NodeId) -> NodeId {        let (params, body) = if let Kind::Lambda { params, body } = self.g.kind(lam) {
+    fn build_for_each(&mut self, recv: NodeId, lam: NodeId) -> NodeId {
+        let (params, body) = if let Kind::Lambda { params, body } = self.g.kind(lam) {
             (params.clone(), *body)
         } else {
             (Vec::new(), lam)
@@ -1195,7 +1423,11 @@ impl Parser {
             init: None,
             is_lazy: false,
         });
-        self.g.add(Kind::ForEach { var, iter: recv, body })
+        self.g.add(Kind::ForEach {
+            var,
+            iter: recv,
+            body,
+        })
     }
 
     /// xs.forEachIndexed { i, v -> ... } → for ((i, v) in xs.withIndex()) { ... }
@@ -1206,15 +1438,32 @@ impl Parser {
             (Vec::new(), lam)
         };
         let strip = |p: &String| -> String {
-            p.split_once(':').map(|(n, _)| n.trim().to_string()).unwrap_or_else(|| p.clone())
+            p.split_once(':')
+                .map(|(n, _)| n.trim().to_string())
+                .unwrap_or_else(|| p.clone())
         };
-        let iname = params.first().map(&strip).unwrap_or_else(|| "index".to_string());
-        let vname = params.get(1).map(&strip).unwrap_or_else(|| "it".to_string());
+        let iname = params
+            .first()
+            .map(&strip)
+            .unwrap_or_else(|| "index".to_string());
+        let vname = params
+            .get(1)
+            .map(&strip)
+            .unwrap_or_else(|| "it".to_string());
         let in_node = self.g.add(Kind::Name { original: iname });
         let vn_node = self.g.add(Kind::Name { original: vname });
-        let var = self.g.add(Kind::Destructure { names: vec![in_node, vn_node] });
-        let wi = self.g.add(Kind::Member { base: recv, name: "withIndex".to_string(), safe: false });
-        let iter = self.g.add(Kind::Call { callee: wi, args: vec![] });
+        let var = self.g.add(Kind::Destructure {
+            names: vec![in_node, vn_node],
+        });
+        let wi = self.g.add(Kind::Member {
+            base: recv,
+            name: "withIndex".to_string(),
+            safe: false,
+        });
+        let iter = self.g.add(Kind::Call {
+            callee: wi,
+            args: vec![],
+        });
         self.g.add(Kind::ForEach { var, iter, body })
     }
 
@@ -1236,16 +1485,45 @@ impl Parser {
             (Vec::new(), lam)
         };
         let var_name = params.first().cloned().unwrap_or_else(|| "it".to_string());
-        let pname = var_name.split(':').next().unwrap_or(&var_name).trim().to_string();
+        let pname = var_name
+            .split(':')
+            .next()
+            .unwrap_or(&var_name)
+            .trim()
+            .to_string();
         let unique = format!("_also_{}", pname);
-        let nn = self.g.add(Kind::Name { original: unique.clone() });
-        let decl = self.g.add(Kind::VarDecl { mutable: false, name_node: nn, ty: None, init: Some(recv), is_lazy: false });
+        let nn = self.g.add(Kind::Name {
+            original: unique.clone(),
+        });
+        let decl = self.g.add(Kind::VarDecl {
+            mutable: false,
+            name_node: nn,
+            ty: None,
+            init: Some(recv),
+            is_lazy: false,
+        });
         // Create alias: let <pname> = _also_<pname>
-        let alias_ref = self.g.add(Kind::NameRef { original: unique.clone(), decl: Some(nn) });
-        let alias_nn = self.g.add(Kind::Name { original: pname.clone() });
-        let alias_decl = self.g.add(Kind::VarDecl { mutable: false, name_node: alias_nn, ty: None, init: Some(alias_ref), is_lazy: false });
-        let ret_ref = self.g.add(Kind::NameRef { original: unique, decl: Some(nn) });
-        let ret_stmt = self.g.add(Kind::Return { value: Some(ret_ref) });
+        let alias_ref = self.g.add(Kind::NameRef {
+            original: unique.clone(),
+            decl: Some(nn),
+        });
+        let alias_nn = self.g.add(Kind::Name {
+            original: pname.clone(),
+        });
+        let alias_decl = self.g.add(Kind::VarDecl {
+            mutable: false,
+            name_node: alias_nn,
+            ty: None,
+            init: Some(alias_ref),
+            is_lazy: false,
+        });
+        let ret_ref = self.g.add(Kind::NameRef {
+            original: unique,
+            decl: Some(nn),
+        });
+        let ret_stmt = self.g.add(Kind::Return {
+            value: Some(ret_ref),
+        });
         // Merge: let _also_it = recv; let it = _also_it; <body stmts>; return _also_it
         let mut stmts = vec![decl, alias_decl];
         if let Kind::Block { stmts: body_stmts } = self.g.kind(body).clone() {
@@ -1255,8 +1533,14 @@ impl Parser {
         }
         stmts.push(ret_stmt);
         let block = self.g.add(Kind::Block { stmts });
-        let outer_lam = self.g.add(Kind::Lambda { params: vec![], body: block });
-        self.g.add(Kind::Call { callee: outer_lam, args: vec![] })
+        let outer_lam = self.g.add(Kind::Lambda {
+            params: vec![],
+            body: block,
+        });
+        self.g.add(Kind::Call {
+            callee: outer_lam,
+            args: vec![],
+        })
     }
 
     /// `recv.run { body }` → `({ => body with this=recv })()`
@@ -1270,12 +1554,19 @@ impl Parser {
         // For now, treat .run { body } same as .let { body } since `this` in body
         // maps to the receiver in Cangjie as well for simple cases
         let _recv = recv; // receiver value is available via closure capture
-        let outer_lam = self.g.add(Kind::Lambda { params: vec![], body });
-        self.g.add(Kind::Call { callee: outer_lam, args: vec![] })
+        let outer_lam = self.g.add(Kind::Lambda {
+            params: vec![],
+            body,
+        });
+        self.g.add(Kind::Call {
+            callee: outer_lam,
+            args: vec![],
+        })
     }
 
     fn peek_next_is_bang(&self) -> bool {
-        self.pos + 1 < self.toks.len() && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "!")
+        self.pos + 1 < self.toks.len()
+            && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "!")
     }
 
     fn peek_next_is_kw(&self, kw: &str) -> bool {
@@ -1284,8 +1575,7 @@ impl Parser {
     }
 
     fn peek_next_is_ident(&self) -> bool {
-        self.pos + 1 < self.toks.len()
-            && matches!(&self.toks[self.pos + 1].tok, Tok::Ident(_))
+        self.pos + 1 < self.toks.len() && matches!(&self.toks[self.pos + 1].tok, Tok::Ident(_))
     }
 
     /// builder 名后紧跟 `(` 或 `<`（泛型实参）。
@@ -1339,6 +1629,16 @@ impl Parser {
     }
 
     fn parse_args(&mut self) -> PResult<Vec<NodeId>> {
+        let mut args = self.parse_args_no_trailing_lambda()?;
+        // 尾随 lambda
+        if self.is_sym("{") {
+            let lam = self.parse_lambda()?;
+            args.push(lam);
+        }
+        Ok(args)
+    }
+
+    fn parse_args_no_trailing_lambda(&mut self) -> PResult<Vec<NodeId>> {
         self.expect_sym("(")?;
         self.skip_newlines();
         let mut args = Vec::new();
@@ -1364,22 +1664,48 @@ impl Parser {
             self.skip_newlines();
         }
         self.expect_sym(")")?;
-        // 尾随 lambda
-        if self.is_sym("{") {
-            let lam = self.parse_lambda()?;
-            args.push(lam);
-        }
         Ok(args)
     }
 
     fn parse_lambda(&mut self) -> PResult<NodeId> {
         self.expect_sym("{")?;
         self.push_scope();
-        let mut params = Vec::new();
-        // 检测 `params ->`，参数可带类型注解 `n: Int`。
         let save = self.pos;
-        let mut has_arrow = false;
-        let mut tmp: Vec<String> = Vec::new();
+        let (params, destructured) = match self.parse_lambda_params()? {
+            Some(parsed) => parsed,
+            None => {
+                self.pos = save;
+                (Vec::new(), None)
+            }
+        };
+        self.skip_seps();
+        let mut stmts = Vec::new();
+        if let Some((tuple_param, names)) = destructured {
+            let tuple_ref = self.g.add(Kind::NameRef {
+                original: tuple_param,
+                decl: None,
+            });
+            stmts.push(self.g.add(Kind::DestructureDecl {
+                mutable: false,
+                names,
+                init: tuple_ref,
+            }));
+        }
+        while !self.is_sym("}") && !self.at_eof() {
+            stmts.push(self.parse_statement()?);
+            self.skip_seps();
+        }
+        self.expect_sym("}")?;
+        self.pop_scope();
+        let body = self.g.add(Kind::Block { stmts });
+        Ok(self.g.add(Kind::Lambda { params, body }))
+    }
+
+    fn parse_lambda_params(
+        &mut self,
+    ) -> PResult<Option<(Vec<String>, Option<(String, Vec<NodeId>)>)>> {
+        let mut params = Vec::new();
+        let mut destructured = None;
         loop {
             match self.peek().clone() {
                 Tok::Ident(n) => {
@@ -1389,32 +1715,37 @@ impl Parser {
                         let ty = self.parse_type()?;
                         p = format!("{}: {}", p, ty);
                     }
-                    tmp.push(p);
+                    params.push(p);
                     self.eat_sym(",");
+                }
+                Tok::Sym(s) if s == "(" && params.is_empty() => {
+                    self.bump();
+                    let tuple_param = "__tuple".to_string();
+                    let mut names = Vec::new();
+                    loop {
+                        let name = self.expect_ident()?;
+                        let nn = self.g.add(Kind::Name {
+                            original: name.clone(),
+                        });
+                        self.declare(&name, nn);
+                        names.push(nn);
+                        self.skip_newlines();
+                        if !self.eat_sym(",") {
+                            break;
+                        }
+                        self.skip_newlines();
+                    }
+                    self.expect_sym(")")?;
+                    params.push(tuple_param.clone());
+                    destructured = Some((tuple_param, names));
                 }
                 Tok::Sym(s) if s == "->" => {
                     self.bump();
-                    has_arrow = true;
-                    break;
+                    return Ok(Some((params, destructured)));
                 }
-                _ => break,
+                _ => return Ok(None),
             }
         }
-        if has_arrow {
-            params = tmp;
-        } else {
-            self.pos = save;
-        }
-        self.skip_seps();
-        let mut stmts = Vec::new();
-        while !self.is_sym("}") && !self.at_eof() {
-            stmts.push(self.parse_statement()?);
-            self.skip_seps();
-        }
-        self.expect_sym("}")?;
-        self.pop_scope();
-        let body = self.g.add(Kind::Block { stmts });
-        Ok(self.g.add(Kind::Lambda { params, body }))
     }
 
     fn parse_primary(&mut self) -> PResult<NodeId> {
@@ -1454,6 +1785,17 @@ impl Parser {
                     self.bump();
                     return Ok(self.g.add(Kind::Raw("None".into())));
                 }
+                if name == "run"
+                    && self.pos + 1 < self.toks.len()
+                    && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "{")
+                {
+                    self.bump();
+                    let lam = self.parse_lambda()?;
+                    return Ok(self.g.add(Kind::Call {
+                        callee: lam,
+                        args: Vec::new(),
+                    }));
+                }
                 // repeat(n) { ... } → for (_ in 0..n) { ... }
                 if name == "repeat" && self.peek_after_ident_is_call_or_generic() {
                     self.bump(); // repeat
@@ -1490,11 +1832,18 @@ impl Parser {
                             }
                             self.expect_sym(">")?;
                             elem = Some(
-                                tys.iter().map(|t| map_type(t)).collect::<Vec<_>>().join(", "),
+                                tys.iter()
+                                    .map(|t| map_type(t))
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
                             );
                         }
                         let args = self.parse_args()?;
-                        return Ok(self.g.add(Kind::CollLit { ctor: ctor.to_string(), elem, args }));
+                        return Ok(self.g.add(Kind::CollLit {
+                            ctor: ctor.to_string(),
+                            elem,
+                            args,
+                        }));
                     }
                 }
                 // 用户泛型类构造：`Stack<Int>()` → 保留类型实参 `Stack<Int64>()`，
@@ -1522,7 +1871,10 @@ impl Parser {
                 }
                 self.bump();
                 let decl = self.resolve(&name);
-                Ok(self.g.add(Kind::NameRef { original: name, decl }))
+                Ok(self.g.add(Kind::NameRef {
+                    original: name,
+                    decl,
+                }))
             }
             Tok::Sym(s) if s == "(" => {
                 self.bump();
@@ -1583,7 +1935,11 @@ impl Parser {
                 else_b = Some(self.parse_block_or_stmt()?);
             }
         }
-        Ok(self.g.add(Kind::If { cond, then_b, else_b }))
+        Ok(self.g.add(Kind::If {
+            cond,
+            then_b,
+            else_b,
+        }))
     }
 
     fn skip_newlines_for_else(&mut self) {
@@ -1610,7 +1966,10 @@ impl Parser {
                 self.expect_sym("->")?;
                 self.skip_newlines();
                 let body = self.parse_block_or_stmt()?;
-                arms.push(WhenArm { patterns: None, body });
+                arms.push(WhenArm {
+                    patterns: None,
+                    body,
+                });
             } else {
                 let mut pats = Vec::new();
                 loop {
@@ -1637,7 +1996,10 @@ impl Parser {
                 self.expect_sym("->")?;
                 self.skip_newlines();
                 let body = self.parse_block_or_stmt()?;
-                arms.push(WhenArm { patterns: Some(pats), body });
+                arms.push(WhenArm {
+                    patterns: Some(pats),
+                    body,
+                });
             }
             self.skip_seps();
         }
@@ -1651,7 +2013,11 @@ impl Parser {
             self.bump();
             Ok(s)
         } else {
-            Err(format!("line {}: 期望标识符，得到 {:?}", self.line(), self.peek()))
+            Err(format!(
+                "line {}: 期望标识符，得到 {:?}",
+                self.line(),
+                self.peek()
+            ))
         }
     }
 
@@ -1718,9 +2084,33 @@ impl Parser {
 /// 关键字转义：把与仓颉关键字冲突的标识符用反引号包裹。
 pub fn safe_name(name: &str) -> String {
     const KW: &[&str] = &[
-        "super", "let", "var", "func", "class", "struct", "interface", "enum",
-        "match", "case", "where", "open", "init", "main", "type", "as", "is", "in",
-        "spawn", "macro", "quote", "extend", "prop", "mut", "unsafe", "foreign",
+        "super",
+        "let",
+        "var",
+        "func",
+        "class",
+        "struct",
+        "interface",
+        "enum",
+        "match",
+        "case",
+        "where",
+        "open",
+        "init",
+        "main",
+        "type",
+        "as",
+        "is",
+        "in",
+        "spawn",
+        "macro",
+        "quote",
+        "extend",
+        "prop",
+        "mut",
+        "unsafe",
+        "foreign",
+        "with",
     ];
     if KW.contains(&name) {
         format!("`{}`", name)
@@ -1735,6 +2125,7 @@ pub fn collection_ctor(name: &str) -> Option<&'static str> {
         "listOf" | "mutableListOf" | "arrayListOf" | "ArrayList" => Some("ArrayList"),
         "setOf" | "mutableSetOf" | "hashSetOf" | "HashSet" => Some("HashSet"),
         "mapOf" | "mutableMapOf" | "hashMapOf" | "HashMap" | "LinkedHashMap" => Some("HashMap"),
+        "arrayOf" => Some("__ArrayLiteral"),
         _ => None,
     }
 }
@@ -1782,12 +2173,18 @@ pub fn map_type(raw: &str) -> String {
     }
     match raw {
         "Int" | "Short" | "Byte" | "Long" => "Int64".to_string(),
+        "UInt" | "ULong" => "UInt64".to_string(),
+        "UShort" => "Int64".to_string(),
+        "UByte" => "UInt8".to_string(),
         "Double" | "Float" => "Float64".to_string(),
         "Boolean" => "Bool".to_string(),
         "Char" => "Rune".to_string(),
+        "CharArray" => "Array<Rune>".to_string(),
+        "IntRange" => "Range<Int64>".to_string(),
         "String" | "CharSequence" => "String".to_string(),
         "Unit" => "Unit".to_string(),
         "Any" => "Object".to_string(),
+        "NumberFormatException" => "IllegalArgumentException".to_string(),
         other => other.to_string(),
     }
 }

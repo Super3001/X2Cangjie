@@ -10,10 +10,10 @@ mod engine;
 mod heuristics;
 mod lexer;
 mod node;
+mod parser;
 mod project;
 mod render;
 mod render_calls;
-mod parser;
 #[allow(dead_code)]
 mod stdlib_map;
 
@@ -40,7 +40,9 @@ fn translate_soc(src: &str) -> Result<(engine::Engine, Vec<usize>), String> {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("用法: kotlin2cj <input.kt|project_dir> [-o out.cj|output_dir] [--stats] [--demo-avalanche]");
+        eprintln!(
+            "用法: kotlin2cj <input.kt|project_dir> [-o out.cj|output_dir] [--stats] [--demo-avalanche]"
+        );
         return ExitCode::from(2);
     }
 
@@ -81,10 +83,14 @@ fn main() -> ExitCode {
         let out_dir = match &output {
             Some(p) => std::path::PathBuf::from(p),
             None => {
-                let name = input_path.file_name()
+                let name = input_path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("output");
-                input_path.parent().unwrap_or(std::path::Path::new(".")).join(format!("{}_cj", name))
+                input_path
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join(format!("{}_cj", name))
             }
         };
         match project::convert_project(input_path, &out_dir) {
@@ -171,37 +177,63 @@ fn run_soc_analysis(src: &str) {
     // Phase 1: 粒子驱动松弛
     let toks = match lexer::Lexer::new(src).tokenize() {
         Ok(t) => t,
-        Err(e) => { eprintln!("词法分析失败: {}", e); return; }
+        Err(e) => {
+            eprintln!("词法分析失败: {}", e);
+            return;
+        }
     };
     let mut p = parser::Parser::new(toks);
     if let Err(e) = p.parse_program() {
-        eprintln!("语法分析失败: {}", e); return;
+        eprintln!("语法分析失败: {}", e);
+        return;
     }
     let mut eng = engine::Engine::new(p.g);
     let grain_avals = eng.relax_soc();
-    eprintln!("SOC_GRAIN_AVALANCHES:{}", grain_avals.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
+    eprintln!(
+        "SOC_GRAIN_AVALANCHES:{}",
+        grain_avals
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
 
     // Phase 2: 全量扰动
     let perturb_avals = eng.perturb_all_names();
-    eprintln!("SOC_PERTURB_AVALANCHES:{}", perturb_avals.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
+    eprintln!(
+        "SOC_PERTURB_AVALANCHES:{}",
+        perturb_avals
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
 
     // Phase 3: 汇总统计
     eprintln!("SOC_NODES:{}", eng.g.nodes.len());
     eprintln!("SOC_TOTAL_UPDATES:{}", eng.total_updates);
 
     // Timing: 比较批量模式 vs SOC 模式（此处源码已通过 Phase 1 验证）
-    let Ok(toks2) = lexer::Lexer::new(src).tokenize() else { return };
+    let Ok(toks2) = lexer::Lexer::new(src).tokenize() else {
+        return;
+    };
     let mut p2 = parser::Parser::new(toks2);
-    if p2.parse_program().is_err() { return }
+    if p2.parse_program().is_err() {
+        return;
+    }
     let start = std::time::Instant::now();
     let mut eng2 = engine::Engine::new(p2.g);
     eng2.relax();
     let bulk_time = start.elapsed();
     let bulk_output = eng2.output();
 
-    let Ok(toks3) = lexer::Lexer::new(src).tokenize() else { return };
+    let Ok(toks3) = lexer::Lexer::new(src).tokenize() else {
+        return;
+    };
     let mut p3 = parser::Parser::new(toks3);
-    if p3.parse_program().is_err() { return }
+    if p3.parse_program().is_err() {
+        return;
+    }
     let start_soc = std::time::Instant::now();
     let mut eng3 = engine::Engine::new(p3.g);
     eng3.relax_soc();
@@ -230,7 +262,10 @@ fn run_demo(eng: &mut engine::Engine) {
                 String::new()
             };
             eprintln!("--- 雪崩演示 ---");
-            eprintln!("重命名声明 '{}' (直接引用 {} 处) -> '{}_renamed'", old, deps, old);
+            eprintln!(
+                "重命名声明 '{}' (直接引用 {} 处) -> '{}_renamed'",
+                old, deps, old
+            );
             eng.perturb_rename(id, &format!("{}_renamed", old));
             eprintln!("级联状态更新（雪崩规模）: {}", eng.last_avalanche);
             eprintln!("（系统已局部自动修复所有受影响引用，无需全局重译）");

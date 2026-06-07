@@ -9,13 +9,14 @@
 //! 引擎对图做异步松弛（worklist 迭代），每个节点仅依据 *自身 + 邻居* 的
 //! 状态更新自己的翻译，状态变更像沙堆崩塌一样沿边级联传播，直至收敛。
 
-
 pub type NodeId = usize;
 
 /// 节点的语法类别及其携带的局部信息。
 #[derive(Debug, Clone)]
 pub enum Kind {
-    Program { items: Vec<NodeId> },
+    Program {
+        items: Vec<NodeId>,
+    },
 
     // ---- 声明 ----
     Func {
@@ -66,6 +67,12 @@ pub enum Kind {
         /// `object Name { ... }` 单例声明。
         is_singleton: bool,
     },
+    /// Kotlin secondary constructor: `constructor(...) : this(...) { ... }`.
+    SecondaryConstructor {
+        params: Vec<NodeId>,
+        delegate: Option<ConstructorDelegate>,
+        body: NodeId,
+    },
     /// 枚举类（支持构造器参数 `enum class Dir(val dx: Int, val dy: Int) { ... }`）。
     Enum {
         name: String,
@@ -88,60 +95,167 @@ pub enum Kind {
     },
 
     // ---- 语句 ----
-    Block { stmts: Vec<NodeId> },
-    ExprStmt { expr: NodeId },
-    Assign { target: NodeId, op: String, value: NodeId },
-    Return { value: Option<NodeId> },
+    Block {
+        stmts: Vec<NodeId>,
+    },
+    ExprStmt {
+        expr: NodeId,
+    },
+    Assign {
+        target: NodeId,
+        op: String,
+        value: NodeId,
+    },
+    Return {
+        value: Option<NodeId>,
+    },
     /// `throw expr`
-    Throw { value: NodeId },
-    If { cond: NodeId, then_b: NodeId, else_b: Option<NodeId> },
-    While { cond: NodeId, body: NodeId },
-    DoWhile { body: NodeId, cond: NodeId },
-    ForRange { var: NodeId, range: NodeId, body: NodeId },
-    ForEach { var: NodeId, iter: NodeId, body: NodeId },
+    Throw {
+        value: NodeId,
+    },
+    If {
+        cond: NodeId,
+        then_b: NodeId,
+        else_b: Option<NodeId>,
+    },
+    While {
+        cond: NodeId,
+        body: NodeId,
+    },
+    DoWhile {
+        body: NodeId,
+        cond: NodeId,
+    },
+    ForRange {
+        var: NodeId,
+        range: NodeId,
+        body: NodeId,
+    },
+    ForEach {
+        var: NodeId,
+        iter: NodeId,
+        body: NodeId,
+    },
     /// `try { } catch (e: T) { } ... finally { }`
-    Try { body: NodeId, catches: Vec<CatchClause>, finally: Option<NodeId> },
+    Try {
+        body: NodeId,
+        catches: Vec<CatchClause>,
+        finally: Option<NodeId>,
+    },
     /// `repeat(n) { ... }` → `for (_ in 0..n) { ... }`
-    Repeat { count: NodeId, body: NodeId },
+    Repeat {
+        count: NodeId,
+        body: NodeId,
+    },
     /// 解构循环变量 `(k, v)`，其名字节点用于在作用域内建立引用依赖。
-    Destructure { names: Vec<NodeId> },
+    Destructure {
+        names: Vec<NodeId>,
+    },
     /// 解构声明 `val (a, b) = expr` → 仓颉 `let (a, b) = expr`。
-    DestructureDecl { mutable: bool, names: Vec<NodeId>, init: NodeId },
-    When { subject: Option<NodeId>, arms: Vec<WhenArm> },
+    DestructureDecl {
+        mutable: bool,
+        names: Vec<NodeId>,
+        init: NodeId,
+    },
+    When {
+        subject: Option<NodeId>,
+        arms: Vec<WhenArm>,
+    },
 
     // ---- 表达式 ----
     IntLit(String),
     FloatLit(String),
     BoolLit(bool),
     CharLit(String),
-    StrTemplate { parts: Vec<TemplatePart> },
+    StrTemplate {
+        parts: Vec<TemplatePart>,
+    },
     /// 标识符引用，`decl` 指向其声明的 Name 节点（若可解析）。
-    NameRef { original: String, decl: Option<NodeId> },
-    Unary { op: String, expr: NodeId },
-    Binary { op: String, lhs: NodeId, rhs: NodeId },
-    Range { lo: NodeId, hi: NodeId, inclusive: bool, down: bool, step: Option<NodeId> },
-    Call { callee: NodeId, args: Vec<NodeId> },
+    NameRef {
+        original: String,
+        decl: Option<NodeId>,
+    },
+    Unary {
+        op: String,
+        expr: NodeId,
+    },
+    Binary {
+        op: String,
+        lhs: NodeId,
+        rhs: NodeId,
+    },
+    Range {
+        lo: NodeId,
+        hi: NodeId,
+        inclusive: bool,
+        down: bool,
+        step: Option<NodeId>,
+    },
+    Call {
+        callee: NodeId,
+        args: Vec<NodeId>,
+    },
     /// 集合字面量构造（listOf / mapOf / setOf 等），记录显式元素类型以支持空集合。
-    CollLit { ctor: String, elem: Option<String>, args: Vec<NodeId> },
-    Index { base: NodeId, index: NodeId },
-    Member { base: NodeId, name: String, safe: bool },
-    Lambda { params: Vec<String>, body: NodeId },
+    CollLit {
+        ctor: String,
+        elem: Option<String>,
+        args: Vec<NodeId>,
+    },
+    Index {
+        base: NodeId,
+        index: NodeId,
+    },
+    Member {
+        base: NodeId,
+        name: String,
+        safe: bool,
+    },
+    /// Kotlin spread argument `*expr` in calls / arrayOf.
+    Spread {
+        expr: NodeId,
+    },
+    Lambda {
+        params: Vec<String>,
+        body: NodeId,
+    },
     /// `recv?.let { it -> ... }` → `if (let Some(it) <- recv) { ... }`。
-    SafeLet { recv: NodeId, var: String, body: NodeId },
+    SafeLet {
+        recv: NodeId,
+        var: String,
+        body: NodeId,
+    },
     /// `expr is T` / `expr !is T` 类型判定。
-    IsCheck { expr: NodeId, ty: String, negate: bool },
+    IsCheck {
+        expr: NodeId,
+        ty: String,
+        negate: bool,
+    },
     /// `when` 的类型分支模式 `is T`（仅出现在 when 臂的 patterns 中）。
-    TypePat { ty: String },
+    TypePat {
+        ty: String,
+    },
     /// `when` 的成员检查分支模式 `in rhs` / `!in rhs`（仅出现在 when 臂的 patterns 中）。
-    InPat { negated: bool, rhs: NodeId },
+    InPat {
+        negated: bool,
+        rhs: NodeId,
+    },
     /// `expr!!` 非空断言 → `.getOrThrow()`。
-    ForceUnwrap { expr: NodeId },
+    ForceUnwrap {
+        expr: NodeId,
+    },
     /// 已经渲染好的原子片段（如简单标识符）。
     Raw(String),
     /// `typealias Name = Type`（渲染为注释或展开）。
-    TypeAlias { name: String, target_type: String },
+    TypeAlias {
+        name: String,
+        target_type: String,
+    },
     /// `as` / `as?` 类型转换。
-    TypeCast { expr: NodeId, ty: String, safe: bool },
+    TypeCast {
+        expr: NodeId,
+        ty: String,
+        safe: bool,
+    },
 }
 
 /// 枚举项：包含名称和可选的构造实参。
@@ -157,6 +271,12 @@ pub struct CtorParam {
     pub name: String,
     pub ty: String,
     pub default: Option<NodeId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstructorDelegate {
+    pub target: String,
+    pub args: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -215,7 +335,10 @@ pub struct Graph {
 
 impl Graph {
     pub fn new() -> Self {
-        Graph { nodes: Vec::new(), root: 0 }
+        Graph {
+            nodes: Vec::new(),
+            root: 0,
+        }
     }
 
     pub fn add(&mut self, kind: Kind) -> NodeId {
@@ -259,25 +382,45 @@ impl Graph {
                 v.extend(params);
                 v.push(*body);
             }
-            Kind::Param { name_node, default, .. } => {
+            Kind::Param {
+                name_node, default, ..
+            } => {
                 v.push(*name_node);
                 if let Some(d) = default {
                     v.push(*d);
                 }
             }
-            Kind::Class { members, super_args, init_block, .. } => {
+            Kind::Class {
+                members,
+                super_args,
+                init_block,
+                ..
+            } => {
                 v.extend(members);
                 v.extend(super_args);
                 if let Some(ib) = init_block {
                     v.push(*ib);
                 }
             }
+            Kind::SecondaryConstructor {
+                params,
+                delegate,
+                body,
+            } => {
+                v.extend(params);
+                if let Some(d) = delegate {
+                    v.extend(&d.args);
+                }
+                v.push(*body);
+            }
             Kind::Enum { entries, .. } => {
                 for e in entries {
                     v.extend(&e.args);
                 }
             }
-            Kind::VarDecl { name_node, init, .. } => {
+            Kind::VarDecl {
+                name_node, init, ..
+            } => {
                 v.push(*name_node);
                 if let Some(i) = init {
                     v.push(*i);
@@ -296,7 +439,11 @@ impl Graph {
                 }
             }
             Kind::Throw { value } => v.push(*value),
-            Kind::If { cond, then_b, else_b } => {
+            Kind::If {
+                cond,
+                then_b,
+                else_b,
+            } => {
                 v.push(*cond);
                 v.push(*then_b);
                 if let Some(e) = else_b {
@@ -321,7 +468,11 @@ impl Graph {
                 v.push(*iter);
                 v.push(*body);
             }
-            Kind::Try { body, catches, finally } => {
+            Kind::Try {
+                body,
+                catches,
+                finally,
+            } => {
                 v.push(*body);
                 for c in catches {
                     v.push(c.body);
@@ -372,6 +523,7 @@ impl Graph {
                 v.push(*index);
             }
             Kind::Member { base, .. } => v.push(*base),
+            Kind::Spread { expr } => v.push(*expr),
             Kind::Lambda { body, .. } => v.push(*body),
             Kind::SafeLet { recv, body, .. } => {
                 v.push(*recv);
@@ -388,8 +540,13 @@ impl Graph {
                     }
                 }
             }
-            Kind::NameRef { .. } | Kind::IntLit(_) | Kind::FloatLit(_) | Kind::BoolLit(_)
-            | Kind::CharLit(_) | Kind::Raw(_) | Kind::TypeAlias { .. } => {}
+            Kind::NameRef { .. }
+            | Kind::IntLit(_)
+            | Kind::FloatLit(_)
+            | Kind::BoolLit(_)
+            | Kind::CharLit(_)
+            | Kind::Raw(_)
+            | Kind::TypeAlias { .. } => {}
             Kind::TypeCast { expr, .. } => v.push(*expr),
         }
         v

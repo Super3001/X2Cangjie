@@ -82,8 +82,15 @@ impl Engine {
         }
 
         Engine {
-            g, last_avalanche: 0, avalanche_sizes: Vec::new(), total_updates: 0,
-            avalanche_memory, decl_index, func_index, class_index, enum_index,
+            g,
+            last_avalanche: 0,
+            avalanche_sizes: Vec::new(),
+            total_updates: 0,
+            avalanche_memory,
+            decl_index,
+            func_index,
+            class_index,
+            enum_index,
         }
     }
 

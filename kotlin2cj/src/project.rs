@@ -25,7 +25,12 @@ fn extract_imports(src: &str) -> Vec<String> {
     for line in src.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("import ") {
-            imports.push(trimmed["import ".len()..].trim().trim_end_matches(';').to_string());
+            imports.push(
+                trimmed["import ".len()..]
+                    .trim()
+                    .trim_end_matches(';')
+                    .to_string(),
+            );
         }
     }
     imports
@@ -62,16 +67,33 @@ fn map_package_name(kotlin_pkg: &str) -> String {
         .to_string()
 }
 
+fn sanitize_cjpm_name(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() || out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
+}
+
 /// 生成 cjpm.toml 内容。
-fn generate_cjpm_toml(project_name: &str) -> String {
+fn generate_cjpm_toml(project_name: &str, has_main: bool) -> String {
+    let output_type = if has_main { "executable" } else { "static" };
     format!(
         r#"[package]
   cjc-version = "1.0.5"
   name = "{name}"
   version = "1.0.0"
-  output-type = "executable"
+  output-type = "{output_type}"
 "#,
-        name = project_name
+        name = project_name,
+        output_type = output_type
     )
 }
 
@@ -79,7 +101,10 @@ fn generate_cjpm_toml(project_name: &str) -> String {
 fn has_main_func(src: &str) -> bool {
     for line in src.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("fun main(") || trimmed == "fun main() {" || trimmed.starts_with("fun main()") {
+        if trimmed.starts_with("fun main(")
+            || trimmed == "fun main() {"
+            || trimmed.starts_with("fun main()")
+        {
             return true;
         }
     }
@@ -126,18 +151,17 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
     }
 
     // 2. 确定项目名称
-    let project_name = input_dir
+    let project_name = output_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("project")
         .to_string();
 
-    let cangjie_pkg = map_package_name(&project_name);
+    let cangjie_pkg = sanitize_cjpm_name(&map_package_name(&project_name));
 
     // 3. 创建输出目录结构
     let src_dir = output_dir.join("src");
-    std::fs::create_dir_all(&src_dir)
-        .map_err(|e| format!("创建目录失败: {}", e))?;
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("创建目录失败: {}", e))?;
 
     // 4. 读取所有文件，提取 import 信息，构建合并源码
     let mut all_imports: HashSet<String> = HashSet::new();
@@ -176,8 +200,8 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
     }
 
     // 5. 统一翻译合并后的源码（一次翻译，同时获取完整输出和剥离 import 的代码体）
-    let (full_raw, raw_output) = translate_file(&merged_source)
-        .map_err(|e| format!("翻译失败: {}", e))?;
+    let (full_raw, raw_output) =
+        translate_file(&merged_source).map_err(|e| format!("翻译失败: {}", e))?;
 
     // 6. 检测需要哪些 import
     let all_imports_vec: Vec<String> = all_imports.into_iter().collect();
@@ -215,7 +239,7 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
         .map_err(|e| format!("写入 {} 失败: {}", out_path.display(), e))?;
 
     // 8. 生成 cjpm.toml
-    let toml_content = generate_cjpm_toml(&cangjie_pkg);
+    let toml_content = generate_cjpm_toml(&cangjie_pkg, !main_sources.is_empty());
     std::fs::write(output_dir.join("cjpm.toml"), &toml_content)
         .map_err(|e| format!("写入 cjpm.toml 失败: {}", e))?;
 
@@ -236,16 +260,19 @@ fn scan_kt_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 fn scan_kt_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("无法读取目录 {}: {}", dir.display(), e))?;
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("无法读取目录 {}: {}", dir.display(), e))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
         let path = entry.path();
         if path.is_dir() {
             // 跳过常见非源码目录
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.') || name == "build" || name == "target"
-                || name == "node_modules" || name == ".gradle"
+            if name.starts_with('.')
+                || name == "build"
+                || name == "target"
+                || name == "node_modules"
+                || name == ".gradle"
             {
                 continue;
             }

@@ -215,7 +215,7 @@ sort_key(leaf) = (avalanche_memory[leaf], Reverse(depth(leaf)))
 
 - **学习语料** `corpus/`：平行片段对 + 规则归纳表 `pairs.md`，记录每条局部规则的
   来源模式（idea.md 中「从平行语料挖掘局部转换模式」）。
-- **测试数据集** `tests/cases/`：160 个端到端用例，覆盖基础、控制流、函数、集合、
+- **测试数据集** `tests/cases/`：213 个端到端用例，覆盖基础、控制流、函数、集合、
   类、经典算法（DP 背包/LIS/零钱兑换/编辑距离/LCS、排序 6 种、BFS/DFS/拓扑排序/Dijkstra、
   GCD/LCM/快速幂/素数筛/矩阵乘法/Kadane/两数之和/罗马数字/回文等 26 个算法题）、
   高挑战性边界测试（嵌套泛型/try 表达式/open-override 多态/密封类/`!!` 断言/LRU 缓存/Trie/
@@ -223,7 +223,7 @@ sort_key(leaf) = (avalanche_memory[leaf], Reverse(depth(leaf)))
   每个用例含 `.kt` 输入与 `.expected` 期望标准输出。
 
 测试驱动 `tests/run_tests.py`：构建翻译器 → 翻译 → `cjc` 编译 → 运行 → 比对输出，
-汇总写入 `tests/log.md`。当前基线 **160/160 翻译、编译、运行输出全部通过**。
+汇总写入 `tests/log.md`。截至 2026-06-07，当前单文件日志为 **213/213 翻译、201/213 编译、196/213 运行输出匹配**。
 
 ---
 

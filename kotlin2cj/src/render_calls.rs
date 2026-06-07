@@ -11,25 +11,55 @@ impl Engine {
 
     pub(crate) fn render_call(&self, callee: NodeId, args: &[NodeId]) -> Option<String> {
         if let Kind::NameRef { original, .. } = self.g.kind(callee) {
+            if original == "Char" && args.len() == 1 {
+                return Some(format!("Rune(UInt32({}))", self.t(args[0])?));
+            }
+            if original == "charArrayOf" {
+                let a: Vec<String> = args
+                    .iter()
+                    .map(|x| self.render_arg(*x))
+                    .collect::<Option<_>>()?;
+                return Some(format!("[{}]", a.join(", ")));
+            }
+            if original == "CharArray" && args.len() == 1 {
+                return Some(format!(
+                    "Array<Rune>({}, {{ _ => r'\\u{{0000}}' }})",
+                    self.t(args[0])?
+                ));
+            }
             if (original == "Pair" || original == "Triple") && args.len() >= 2 {
-                let a: Vec<String> = args.iter().map(|x| self.t(*x)).collect::<Option<_>>()?;
+                let a: Vec<String> = args
+                    .iter()
+                    .map(|x| self.render_arg(*x))
+                    .collect::<Option<_>>()?;
                 return Some(format!("({})", a.join(", ")));
             }
-            if (original == "maxOf" || original == "minOf"
+            if (original == "maxOf"
+                || original == "minOf"
                 || ((original == "max" || original == "min") && !self.is_user_func(original)))
                 && args.len() == 2
             {
                 let a = self.t(args[0])?;
                 let b = self.t(args[1])?;
-                let cmp = if original == "maxOf" || original == "max" { ">" } else { "<" };
-                return Some(format!("(if ({} {} {}) {{ {} }} else {{ {} }})", a, cmp, b, a, b));
+                let cmp = if original == "maxOf" || original == "max" {
+                    ">"
+                } else {
+                    "<"
+                };
+                return Some(format!(
+                    "(if ({} {} {}) {{ {} }} else {{ {} }})",
+                    a, cmp, b, a, b
+                ));
             }
             if original == "abs" && args.len() == 1 && !self.is_user_func(original) {
                 let a = self.atom(args[0])?;
                 return Some(format!("(if ({} < 0) {{ -({}) }} else {{ {} }})", a, a, a));
             }
-            if (original == "Array" || original == "IntArray" || original == "BooleanArray"
-                || original == "DoubleArray" || original == "LongArray")
+            if (original == "Array"
+                || original == "IntArray"
+                || original == "BooleanArray"
+                || original == "DoubleArray"
+                || original == "LongArray")
                 && args.len() == 2
             {
                 if let Kind::Lambda { params, body } = self.g.kind(args[1]) {
@@ -52,30 +82,36 @@ impl Engine {
             }
         }
         if let Kind::Member { base, name, .. } = self.g.kind(callee) {
+            if let Some(a) = self.render_call_args_with_params(name, args) {
+                let c = self.atom(callee)?;
+                return Some(format!("{}({})", c, a.join(", ")));
+            }
             if let Some(result) = self.render_member_call(*base, name, args) {
                 return Some(result);
             }
         }
         let c = self.atom(callee)?;
         if let Kind::NameRef { original, .. } = self.g.kind(callee) {
-            if let Some(named) = self.fn_named_params(original) {
-                let mut a = Vec::with_capacity(args.len());
-                for (i, x) in args.iter().enumerate() {
-                    let s = self.t(*x)?;
-                    match named.get(i) {
-                        Some((pname, true)) => a.push(format!("{}: {}", pname, s)),
-                        _ => a.push(s),
-                    }
-                }
+            if let Some(a) = self.render_call_args_with_params(original, args) {
                 return Some(format!("{}({})", c, a.join(", ")));
             }
         }
-        let a: Vec<String> = args.iter().map(|x| self.t(*x)).collect::<Option<_>>()?;
+        let a: Vec<String> = args
+            .iter()
+            .map(|x| self.render_arg(*x))
+            .collect::<Option<_>>()?;
         Some(format!("{}({})", c, a.join(", ")))
     }
 
     /// 成员方法调用的特殊映射，返回 None 表示无特殊处理。
     fn render_member_call(&self, base: NodeId, name: &str, args: &[NodeId]) -> Option<String> {
+        if name == "toChars" && args.len() == 1 {
+            if let Kind::NameRef { original, .. } = self.g.kind(base) {
+                if original == "CharsUtils" {
+                    return Some(format!("[Rune(UInt32({}))]", self.t(args[0])?));
+                }
+            }
+        }
         // 枚举 values()
         if name == "values" && args.is_empty() {
             if let Kind::NameRef { original, .. } = self.g.kind(base) {
@@ -98,17 +134,29 @@ impl Engine {
                 Some(format!("{}.{}()", b, m))
             }
             "isLetterOrDigit" if args.is_empty() && self.looks_char(base) => {
+                Some(format!("({}.isAsciiLetter() || {}.isAsciiNumber())", b, b))
+            }
+            "isHighSurrogate" if args.is_empty() => {
+                let code = format!("Int64(UInt32({}))", b);
                 Some(format!(
-                    "({}.isAsciiLetter() || {}.isAsciiNumber())",
-                    b, b
+                    "({{ => let _c = {}; _c >= 0xD800 && _c <= 0xDBFF }})()",
+                    code
                 ))
             }
-            "toChar" if args.is_empty() => {
-                Some(format!("Rune(UInt32({}))", b))
+            "isLowSurrogate" if args.is_empty() => {
+                let code = format!("Int64(UInt32({}))", b);
+                Some(format!(
+                    "({{ => let _c = {}; _c >= 0xDC00 && _c <= 0xDFFF }})()",
+                    code
+                ))
             }
+            "toChar" if args.is_empty() => Some(format!("Rune(UInt32({}))", b)),
+            "toUShort" if args.is_empty() => Some(b),
 
             // ---- String 方法 ----
-            "padStart" | "padEnd" if self.looks_string(base) && (args.len() == 1 || args.len() == 2) => {
+            "padStart" | "padEnd"
+                if self.looks_string(base) && (args.len() == 1 || args.len() == 2) =>
+            {
                 let width = self.t(args[0])?;
                 let pad = if args.len() == 2 {
                     if let Kind::CharLit(c) = self.g.kind(args[1]) {
@@ -153,6 +201,16 @@ impl Engine {
                 };
                 Some(format!("{}.contains({})", b, needle))
             }
+            "contains"
+                if args.len() == 1
+                    && self.expr_type_name(base).as_deref() == Some("Range<Int64>") =>
+            {
+                let v = self.t(args[0])?;
+                Some(format!(
+                    "({{ => let _r = {}; let _v = {}; if (_r.step > 0) {{ if (_r.isClosed) {{ (_v >= _r.start) && (_v <= _r.end) }} else {{ (_v >= _r.start) && (_v < _r.end) }} }} else {{ if (_r.isClosed) {{ (_v <= _r.start) && (_v >= _r.end) }} else {{ (_v <= _r.start) && (_v > _r.end) }} }} }})()",
+                    b, v
+                ))
+            }
             "replace" if args.len() == 2 && self.looks_string(base) => {
                 let old_str = if let Kind::CharLit(c) = self.g.kind(args[0]) {
                     format!("\"{}\"", c)
@@ -172,29 +230,39 @@ impl Engine {
                 } else {
                     self.t(args[0])?
                 };
-                Some(format!("collectArrayList({}.split({}).iterator())", b, delim))
+                Some(format!(
+                    "collectArrayList({}.split({}).iterator())",
+                    b, delim
+                ))
             }
             "substring" if args.len() == 2 => {
-                Some(format!("{}[{}..{}]", b, self.t(args[0])?, self.t(args[1])?))
+                Some(self.render_string_rune_slice(&b, &self.t(args[0])?, &self.t(args[1])?))
             }
-            "substring" if args.len() == 1 => {
-                Some(format!("{}[{}..]", b, self.t(args[0])?))
+            "substring" if args.len() == 1 => Some(self.render_string_rune_slice(
+                &b,
+                &self.t(args[0])?,
+                &format!("{}.toRuneArray().size", b),
+            )),
+            "subSequence" if args.len() == 2 => {
+                Some(self.render_string_rune_slice(&b, &self.t(args[0])?, &self.t(args[1])?))
             }
             "repeat" if args.len() == 1 && self.looks_string(base) => {
                 Some(format!("({} * {})", b, self.atom(args[0])?))
             }
             "take" if args.len() == 1 && self.looks_string(base) => {
-                Some(format!("{}[0..{}]", b, self.t(args[0])?))
+                Some(self.render_string_rune_slice(&b, "0", &self.t(args[0])?))
             }
             "drop" if args.len() == 1 && self.looks_string(base) => {
-                Some(format!("{}[{}..{}.size]", b, self.t(args[0])?, b))
-            }
-            "reversed" if args.is_empty() && self.looks_string(base) => {
-                Some(format!(
-                    "({{ => let _r = {}.toRuneArray(); String(Array<Rune>(_r.size, {{j => _r[_r.size - 1 - j]}})) }})()",
-                    b
+                Some(self.render_string_rune_slice(
+                    &b,
+                    &self.t(args[0])?,
+                    &format!("{}.toRuneArray().size", b),
                 ))
             }
+            "reversed" if args.is_empty() && self.looks_string(base) => Some(format!(
+                "({{ => let _r = {}.toRuneArray(); String(Array<Rune>(_r.size, {{j => _r[_r.size - 1 - j]}})) }})()",
+                b
+            )),
 
             // ---- 集合通用方法 ----
             "isEmpty" if args.is_empty() && self.looks_string_builder(base) => {
@@ -212,18 +280,21 @@ impl Engine {
             "containsKey" if args.len() == 1 => {
                 Some(format!("{}.contains({})", b, self.t(args[0])?))
             }
-            "clear" if args.is_empty() => {
-                Some(format!("{}.clear()", b))
-            }
-            "getOrDefault" if args.len() == 2 => {
-                Some(format!("({}.get({}) ?? {})", b, self.t(args[0])?, self.t(args[1])?))
-            }
+            "clear" if args.is_empty() => Some(format!("{}.clear()", b)),
+            "getOrDefault" if args.len() == 2 => Some(format!(
+                "({}.get({}) ?? {})",
+                b,
+                self.t(args[0])?,
+                self.t(args[1])?
+            )),
             "getOrPut" if args.len() == 2 => {
                 let key = self.t(args[0])?;
                 let default_lam = self.t(args[1])?;
                 Some(format!(
                     "({{ => if ({b}.contains({key})) {{ {b}[{key}] }} else {{ let _v = ({default_lam})(); {b}[{key}] = _v; _v }} }})()",
-                    b = b, key = key, default_lam = default_lam
+                    b = b,
+                    key = key,
+                    default_lam = default_lam
                 ))
             }
             "isNotEmpty" if args.is_empty() => {
@@ -233,12 +304,8 @@ impl Engine {
                     Some(format!("!({}.isEmpty())", b))
                 }
             }
-            "first" if args.is_empty() => {
-                Some(format!("{}[0]", b))
-            }
-            "last" if args.is_empty() => {
-                Some(format!("{}[{}.size - 1]", b, b))
-            }
+            "first" if args.is_empty() => Some(format!("{}[0]", b)),
+            "last" if args.is_empty() => Some(format!("{}[{}.size - 1]", b, b)),
             "firstOrNull" if args.is_empty() && !self.provably_non_collection(base) => {
                 Some(format!("{}.get(0)", b))
             }
@@ -253,34 +320,38 @@ impl Engine {
             "sortDescending" if args.is_empty() && !self.provably_non_collection(base) => {
                 Some(format!("sort({}, stable: true, descending: true)", b))
             }
-            "sortBy" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!("sort({}, key: {}, stable: true)", b, self.t(args[0])?))
-            }
+            "sortBy" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "sort({}, key: {}, stable: true)",
+                b,
+                self.t(args[0])?
+            )),
             "sortByDescending" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!("sort({}, key: {}, stable: true, descending: true)", b, self.t(args[0])?))
-            }
-            "sorted" if args.is_empty() && !self.provably_non_collection(base) => {
                 Some(format!(
-                    "({{ => let _s = collectArrayList({}); sort(_s, stable: true); _s }})()",
-                    self.as_iter(base)?
+                    "sort({}, key: {}, stable: true, descending: true)",
+                    b,
+                    self.t(args[0])?
                 ))
             }
+            "sorted" if args.is_empty() && !self.provably_non_collection(base) => Some(format!(
+                "({{ => let _s = collectArrayList({}); sort(_s, stable: true); _s }})()",
+                self.as_iter(base)?
+            )),
             "sortedDescending" if args.is_empty() && !self.provably_non_collection(base) => {
                 Some(format!(
                     "({{ => let _s = collectArrayList({}); sort(_s, stable: true, descending: true); _s }})()",
                     self.as_iter(base)?
                 ))
             }
-            "sortedBy" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "({{ => let _s = collectArrayList({}); sort(_s, key: {}, stable: true); _s }})()",
-                    self.as_iter(base)?, self.t(args[0])?
-                ))
-            }
+            "sortedBy" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "({{ => let _s = collectArrayList({}); sort(_s, key: {}, stable: true); _s }})()",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
             "sortedByDescending" if args.len() == 1 && !self.provably_non_collection(base) => {
                 Some(format!(
                     "({{ => let _s = collectArrayList({}); sort(_s, key: {}, stable: true, descending: true); _s }})()",
-                    self.as_iter(base)?, self.t(args[0])?
+                    self.as_iter(base)?,
+                    self.t(args[0])?
                 ))
             }
 
@@ -292,50 +363,56 @@ impl Engine {
                 let lam = self.t(args[0])?;
                 Some(format!(
                     "for (_e in {}) {{ ({})(_e) }}",
-                    self.atom(base)?, lam
+                    self.atom(base)?,
+                    lam
                 ))
             }
             "forEachIndexed" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let lam = self.t(args[0])?;
                 Some(format!(
                     "for ((_i, _e) in {}.enumerate()) {{ ({})(_i, _e) }}",
-                    self.as_iter(base)?, lam
+                    self.as_iter(base)?,
+                    lam
                 ))
             }
             "map" | "filter" if args.len() == 1 && !self.provably_non_collection(base) => {
                 Some(format!(
                     "collectArrayList({}.{}({}))",
-                    self.as_iter(base)?, name, self.t(args[0])?
-                ))
-            }
-            "flatMap" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "collectArrayList({}.flatMap({{ _e => ({})(_e).iterator() }}))",
-                    self.as_iter(base)?, self.t(args[0])?
-                ))
-            }
-            "any" | "all" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!("{}.{}({})", self.as_iter(base)?, name, self.t(args[0])?))
-            }
-            "none" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!("!{}.any({})", self.as_iter(base)?, self.t(args[0])?))
-            }
-            "count" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!("{}.filter({}).count()", self.as_iter(base)?, self.t(args[0])?))
-            }
-            "count" if args.is_empty() && !self.provably_non_collection(base) => {
-                Some(format!("{}.size", b))
-            }
-            "sum" if args.is_empty() && !self.provably_non_collection(base) => {
-                Some(format!("{}.fold<Int64>(0, {{acc, x => acc + x}})", self.as_iter(base)?))
-            }
-            "sumOf" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "{}.map({}).fold<Int64>(0, {{acc, x => acc + x}})",
                     self.as_iter(base)?,
+                    name,
                     self.t(args[0])?
                 ))
             }
+            "flatMap" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "collectArrayList({}.flatMap({{ _e => ({})(_e).iterator() }}))",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
+            "any" | "all" if args.len() == 1 && !self.provably_non_collection(base) => Some(
+                format!("{}.{}({})", self.as_iter(base)?, name, self.t(args[0])?),
+            ),
+            "none" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "!{}.any({})",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
+            "count" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "{}.filter({}).count()",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
+            "count" if args.is_empty() && !self.provably_non_collection(base) => {
+                Some(format!("{}.size", b))
+            }
+            "sum" if args.is_empty() && !self.provably_non_collection(base) => Some(format!(
+                "{}.fold<Int64>(0, {{acc, x => acc + x}})",
+                self.as_iter(base)?
+            )),
+            "sumOf" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "{}.map({}).fold<Int64>(0, {{acc, x => acc + x}})",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
             "fold" if args.len() == 2 && !self.provably_non_collection(base) => {
                 let ty = self.lit_type(args[0]);
                 Some(format!(
@@ -346,56 +423,55 @@ impl Engine {
                     self.t(args[1])?
                 ))
             }
-            "reduce" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!("{}.reduce({}).getOrThrow()", self.as_iter(base)?, self.t(args[0])?))
-            }
+            "reduce" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "{}.reduce({}).getOrThrow()",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
             "max" | "min" if args.is_empty() && !self.provably_non_collection(base) => {
                 let cmp = if name == "max" { ">" } else { "<" };
                 Some(format!(
                     "{}.reduce({{a, b => if (a {} b) {{ a }} else {{ b }}}}).getOrThrow()",
-                    self.as_iter(base)?, cmp
+                    self.as_iter(base)?,
+                    cmp
                 ))
             }
             "maxOrNull" | "minOrNull" if args.is_empty() && !self.provably_non_collection(base) => {
                 let cmp = if name == "maxOrNull" { ">" } else { "<" };
                 Some(format!(
                     "{}.reduce({{a, b => if (a {} b) {{ a }} else {{ b }}}})",
-                    self.as_iter(base)?, cmp
+                    self.as_iter(base)?,
+                    cmp
                 ))
             }
-            "average" if args.is_empty() && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "(Float64({}.fold<Int64>(0, {{acc, x => acc + x}})) / Float64({}.count()))",
-                    self.as_iter(base)?, self.as_iter(base)?
-                ))
-            }
-            "reversed" if args.is_empty() && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "({{ => let _s = collectArrayList({}); _s.reverse(); _s }})()",
-                    self.as_iter(base)?
-                ))
-            }
-            "take" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "collectArrayList({}.take({}))",
-                    self.as_iter(base)?, self.t(args[0])?
-                ))
-            }
-            "drop" if args.len() == 1 && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "collectArrayList({}.skip({}))",
-                    self.as_iter(base)?, self.t(args[0])?
-                ))
-            }
-            "toList" | "toMutableList" if args.is_empty() && !self.provably_non_collection(base) => {
+            "average" if args.is_empty() && !self.provably_non_collection(base) => Some(format!(
+                "(Float64({}.fold<Int64>(0, {{acc, x => acc + x}})) / Float64({}.count()))",
+                self.as_iter(base)?,
+                self.as_iter(base)?
+            )),
+            "reversed" if args.is_empty() && !self.provably_non_collection(base) => Some(format!(
+                "({{ => let _s = collectArrayList({}); _s.reverse(); _s }})()",
+                self.as_iter(base)?
+            )),
+            "take" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "collectArrayList({}.take({}))",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
+            "drop" if args.len() == 1 && !self.provably_non_collection(base) => Some(format!(
+                "collectArrayList({}.skip({}))",
+                self.as_iter(base)?,
+                self.t(args[0])?
+            )),
+            "toList" | "toMutableList"
+                if args.is_empty() && !self.provably_non_collection(base) =>
+            {
                 Some(format!("collectArrayList({})", self.atom(base)?))
             }
-            "distinct" if args.is_empty() && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "({{ => let _hs = HashSet<Int64>(); let _r = ArrayList<Int64>(); for (_e in {}) {{ if (!_hs.contains(_e)) {{ _hs.put(_e); _r.add(_e) }} }}; _r }})()",
-                    self.atom(base)?
-                ))
-            }
+            "distinct" if args.is_empty() && !self.provably_non_collection(base) => Some(format!(
+                "({{ => let _hs = HashSet<Int64>(); let _r = ArrayList<Int64>(); for (_e in {}) {{ if (!_hs.contains(_e)) {{ _hs.put(_e); _r.add(_e) }} }}; _r }})()",
+                self.atom(base)?
+            )),
             "joinToString" if !self.provably_non_collection(base) => {
                 self.render_join_to_string(base, &b, args)
             }
@@ -405,14 +481,16 @@ impl Engine {
                 let lam = self.t(args[0])?;
                 Some(format!(
                     "collectArrayList({}.enumerate().map({{ _p => ({})(_p[0], _p[1]) }}))",
-                    self.as_iter(base)?, lam
+                    self.as_iter(base)?,
+                    lam
                 ))
             }
             "filterNot" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let pred = self.t(args[0])?;
                 Some(format!(
                     "collectArrayList({}.filter({{ _e => !({})(_e) }}))",
-                    self.as_iter(base)?, pred
+                    self.as_iter(base)?,
+                    pred
                 ))
             }
             "filterNotNull" if args.is_empty() && !self.provably_non_collection(base) => {
@@ -421,66 +499,72 @@ impl Engine {
                     self.as_iter(base)?
                 ))
             }
-            "flatten" if args.is_empty() && !self.provably_non_collection(base) => {
-                Some(format!(
-                    "collectArrayList({}.flatMap({{ _e => _e.iterator() }}))",
-                    self.as_iter(base)?
-                ))
-            }
+            "flatten" if args.is_empty() && !self.provably_non_collection(base) => Some(format!(
+                "collectArrayList({}.flatMap({{ _e => _e.iterator() }}))",
+                self.as_iter(base)?
+            )),
             "associateBy" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let key_fn = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _m = HashMap<Int64, Int64>(); for (_e in {}) {{ _m[({})(_e)] = _e }}; _m }})()",
-                    self.atom(base)?, key_fn
+                    self.atom(base)?,
+                    key_fn
                 ))
             }
             "associateWith" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let val_fn = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _m = HashMap<Int64, Int64>(); for (_e in {}) {{ _m[_e] = ({})(_e) }}; _m }})()",
-                    self.atom(base)?, val_fn
+                    self.atom(base)?,
+                    val_fn
                 ))
             }
             "mapValues" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let lam = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _m = HashMap<Int64, Int64>(); for ((_k, _v) in {}) {{ _m[_k] = ({})((key: _k, value: _v)) }}; _m }})()",
-                    self.atom(base)?, lam
+                    self.atom(base)?,
+                    lam
                 ))
             }
             "mapKeys" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let lam = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _m = HashMap<Int64, Int64>(); for ((_k, _v) in {}) {{ _m[({})((key: _k, value: _v))] = _v }}; _m }})()",
-                    self.atom(base)?, lam
+                    self.atom(base)?,
+                    lam
                 ))
             }
             "indexOfFirst" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let pred = self.t(args[0])?;
                 Some(format!(
                     "({{ => var _i = 0; for (_e in {}) {{ if (({})(_e)) {{ return _i }}; _i++ }}; return -1 }})()",
-                    self.atom(base)?, pred
+                    self.atom(base)?,
+                    pred
                 ))
             }
             "indexOfLast" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let pred = self.t(args[0])?;
                 Some(format!(
                     "({{ => var _r = -1; var _i = 0; for (_e in {}) {{ if (({})(_e)) {{ _r = _i }}; _i++ }}; return _r }})()",
-                    self.atom(base)?, pred
+                    self.atom(base)?,
+                    pred
                 ))
             }
             "find" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let pred = self.t(args[0])?;
                 Some(format!(
                     "({{ => for (_e in {}) {{ if (({})(_e)) {{ return _e }} }}; return None }})()",
-                    self.atom(base)?, pred
+                    self.atom(base)?,
+                    pred
                 ))
             }
             "findLast" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let pred = self.t(args[0])?;
                 Some(format!(
                     "({{ => var _r: Option<Int64> = None; for (_e in {}) {{ if (({})(_e)) {{ _r = _e }} }}; return _r }})()",
-                    self.atom(base)?, pred
+                    self.atom(base)?,
+                    pred
                 ))
             }
             "zip" if args.len() >= 1 && !self.provably_non_collection(base) => {
@@ -490,12 +574,15 @@ impl Engine {
                     let lam = self.t(args[1])?;
                     Some(format!(
                         "collectArrayList({}.zip({}.iterator()).map({{ _p => ({})(_p[0], _p[1]) }}))",
-                        self.as_iter(base)?, other, lam
+                        self.as_iter(base)?,
+                        other,
+                        lam
                     ))
                 } else {
                     Some(format!(
                         "collectArrayList({}.zip({}.iterator()))",
-                        self.as_iter(base)?, other
+                        self.as_iter(base)?,
+                        other
                     ))
                 }
             }
@@ -503,14 +590,17 @@ impl Engine {
                 let pred = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _t = ArrayList<Int64>(); let _f = ArrayList<Int64>(); for (_e in {}) {{ if (({})(_e)) {{ _t.add(_e) }} else {{ _f.add(_e) }} }}; (_t, _f) }})()",
-                    self.atom(base)?, pred
+                    self.atom(base)?,
+                    pred
                 ))
             }
             "chunked" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let n = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _src = collectArrayList({}); let _r = ArrayList<ArrayList<Int64>>(); var _i = 0; while (_i < _src.size) {{ let _end = if (_i + {} < _src.size) {{ _i + {} }} else {{ _src.size }}; let _c = ArrayList<Int64>(); var _j = _i; while (_j < _end) {{ _c.add(_src[_j]); _j++ }}; _r.add(_c); _i = _end }}; _r }})()",
-                    self.as_iter(base)?, n, n
+                    self.as_iter(base)?,
+                    n,
+                    n
                 ))
             }
 
@@ -519,18 +609,23 @@ impl Engine {
                 let key_fn = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _m = HashMap<Int64, ArrayList<Int64>>(); for (_e in {}) {{ let _k = ({})(_e); if (!_m.contains(_k)) {{ _m[_k] = ArrayList<Int64>() }}; _m[_k].add(_e) }}; _m }})()",
-                    self.atom(base)?, key_fn
+                    self.atom(base)?,
+                    key_fn
                 ))
             }
             "associate" if args.len() == 1 && !self.provably_non_collection(base) => {
                 let pair_fn = self.t(args[0])?;
                 Some(format!(
                     "({{ => let _m = HashMap<Int64, Int64>(); for (_e in {}) {{ let _p = ({})(_e); _m[_p[0]] = _p[1] }}; _m }})()",
-                    self.atom(base)?, pair_fn
+                    self.atom(base)?,
+                    pair_fn
                 ))
             }
 
             // ---- 类型转换 ----
+            "toInt" | "toLong" if args.len() == 1 => {
+                Some(format!("Int64.parse({}, radix: {})", b, self.t(args[0])?))
+            }
             "toInt" | "toLong" if args.is_empty() => {
                 if self.looks_numeric(base) {
                     Some(format!("Int64({})", b))
@@ -545,8 +640,9 @@ impl Engine {
                     Some(format!("Float64.parse({})", b))
                 }
             }
-            "toString" if args.is_empty() => {
-                Some(format!("{}.toString()", b))
+            "toString" if args.is_empty() => Some(format!("{}.toString()", b)),
+            "toString" if args.len() == 1 => {
+                Some(format!("{}.toString(radix: {})", b, self.t(args[0])?))
             }
 
             _ => None,
@@ -573,13 +669,22 @@ impl Engine {
         }
         let joined = format!(
             "String.join(collectArray<String>({}.map({{e => e.toString()}})), delimiter: {})",
-            self.as_iter(base)?, sep
+            self.as_iter(base)?,
+            sep
         );
         if args.len() >= 2 {
             let prefix = self.t(args[1])?;
-            let postfix = if args.len() >= 3 { self.t(args[2])? } else { "\"\"".to_string() };
+            let postfix = if args.len() >= 3 {
+                self.t(args[2])?
+            } else {
+                "\"\"".to_string()
+            };
             return Some(format!("({} + {} + {})", prefix, joined, postfix));
         }
         Some(joined)
+    }
+
+    fn render_string_rune_slice(&self, base: &str, start: &str, end: &str) -> String {
+        format!("__k2cjRuneSlice({}, {}, {})", base, start, end)
     }
 }

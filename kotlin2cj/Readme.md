@@ -212,7 +212,7 @@ main() {
 
 - **学习语料** [`corpus/`](./corpus/)：Kotlin↔仓颉平行片段与规则归纳表
   （`pairs.md`），是局部规则的来源。
-- **单文件测试** [`tests/cases/*.kt`](./tests/cases/)：187 个端到端用例（含经典算法、多类协作、
+- **单文件测试** [`tests/cases/*.kt`](./tests/cases/)：213 个端到端用例（含经典算法、多类协作、
   高挑战性边界用例等），每个含 `.kt` 输入与 `.expected` 期望标准输出。
 - **项目级测试** [`tests/cases/proj_*`](./tests/cases/)：33 个多文件 Kotlin 项目用例
   （calculator, shapes, todolist, bank, inventory, linkedlist, statistics,
@@ -221,8 +221,9 @@ main() {
   patterns, pipeline, queue, recipe, registry, school, sealed_expr,
   statemachine, stringops, taskrunner, tournament, warehouse），
   每个目录含多个 `.kt` 文件和 `expected_output`，验证项目级转换的完整流程。
-- **转换结果** [`tests/cangjie/`](./tests/cangjie/)：所有测试用例转换生成的仓颉代码，
-  包含 187 个单文件 `.cj` 和 33 个 cjpm 项目目录。
+- **转换结果** [`tests/cangjie/`](./tests/cangjie/)：历史测试用例转换生成的仓颉代码，
+  包含 187 个单文件 `.cj` 和 33 个 cjpm 项目目录；新增回归用例由 `tests/run_tests.py`
+  按需生成到 `tests/generated/`。
 
 运行全部单文件测试：
 ```bash
@@ -240,7 +241,8 @@ python3 tests/run_project_tests.py
 # 结果汇总写入 tests/project_log.md
 ```
 
-当前基线：**187/187 单文件测试通过，33/33 项目级测试通过**。
+当前状态：**213 个单文件测试用例**。最新完整单文件日志见 [`tests/log.md`](./tests/log.md)；
+本轮 ksoup 相关回归覆盖 200、209、211、212、213，并已用 `cjc` 编译运行验证。
 
 ---
 
@@ -262,9 +264,9 @@ kotlin2cj/
 │   └── main.rs         # CLI（支持文件和目录输入）
 ├── corpus/             # 学习语料（平行片段 + 规则表）
 ├── tests/
-│   ├── cases/          # 187 个单文件 .kt/.expected 用例
+│   ├── cases/          # 213 个单文件 .kt/.expected 用例
 │   ├── cases/proj_*/   # 33 个多文件项目用例
-│   ├── cangjie/        # 转换生成的仓颉代码（187 个 .cj 单文件 + 33 个 cjpm 项目）
+│   ├── cangjie/        # 历史转换生成的仓颉代码（187 个 .cj 单文件 + 33 个 cjpm 项目）
 │   ├── run_tests.py    # 单文件端到端测试驱动
 │   └── run_project_tests.py  # 项目级端到端测试驱动
 ├── Design.md           # 技术方案

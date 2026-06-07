@@ -40,14 +40,26 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        Lexer { src: src.as_bytes(), pos: 0, line: 1 }
+        Lexer {
+            src: src.as_bytes(),
+            pos: 0,
+            line: 1,
+        }
     }
 
     fn peek(&self) -> u8 {
-        if self.pos < self.src.len() { self.src[self.pos] } else { 0 }
+        if self.pos < self.src.len() {
+            self.src[self.pos]
+        } else {
+            0
+        }
     }
     fn peek2(&self) -> u8 {
-        if self.pos + 1 < self.src.len() { self.src[self.pos + 1] } else { 0 }
+        if self.pos + 1 < self.src.len() {
+            self.src[self.pos + 1]
+        } else {
+            0
+        }
     }
     fn bump(&mut self) -> u8 {
         let c = self.peek();
@@ -63,7 +75,10 @@ impl<'a> Lexer<'a> {
         loop {
             self.skip_ws_and_comments();
             if self.pos >= self.src.len() {
-                out.push(Token { tok: Tok::Eof, line: self.line });
+                out.push(Token {
+                    tok: Tok::Eof,
+                    line: self.line,
+                });
                 break;
             }
             let line = self.line;
@@ -84,7 +99,10 @@ impl<'a> Lexer<'a> {
             };
             // 折叠连续换行为单个换行标记。
             if let Tok::Newline = tok {
-                if let Some(Token { tok: Tok::Newline, .. }) = out.last() {
+                if let Some(Token {
+                    tok: Tok::Newline, ..
+                }) = out.last()
+                {
                     continue;
                 }
             }
@@ -121,7 +139,9 @@ impl<'a> Lexer<'a> {
         while is_ident_continue(self.peek()) {
             self.bump();
         }
-        let s = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
+        let s = std::str::from_utf8(&self.src[start..self.pos])
+            .unwrap()
+            .to_string();
         Tok::Ident(s)
     }
 
@@ -176,7 +196,18 @@ impl<'a> Lexer<'a> {
         }
         let s = std::str::from_utf8(&self.src[start..self.pos]).unwrap();
         // 去掉后缀，保留下划线分隔符（仓颉支持 `1_000`）。
-        let s: String = s.chars().filter(|c| c.is_ascii_digit() || *c == '.' || *c == 'e' || *c == 'E' || *c == '+' || *c == '-' || *c == '_').collect();
+        let s: String = s
+            .chars()
+            .filter(|c| {
+                c.is_ascii_digit()
+                    || *c == '.'
+                    || *c == 'e'
+                    || *c == 'E'
+                    || *c == '+'
+                    || *c == '-'
+                    || *c == '_'
+            })
+            .collect();
         if is_float || suffix_float {
             Tok::Float(s)
         } else {
@@ -186,19 +217,24 @@ impl<'a> Lexer<'a> {
 
     fn lex_char(&mut self) -> Result<Tok, String> {
         self.bump(); // '
-        let start = self.pos;
+        let mut buf = String::new();
         while self.peek() != b'\'' && self.pos < self.src.len() {
             if self.peek() == b'\\' {
+                self.push_escape(&mut buf);
+            } else {
+                let ch_start = self.pos;
                 self.bump();
+                while self.peek() >= 0x80 && self.peek() < 0xC0 {
+                    self.bump();
+                }
+                buf.push_str(std::str::from_utf8(&self.src[ch_start..self.pos]).unwrap());
             }
-            self.bump();
         }
-        let s = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
         if self.peek() != b'\'' {
             return Err(format!("line {}: 未闭合的字符字面量", self.line));
         }
         self.bump(); // '
-        Ok(Tok::Char(s))
+        Ok(Tok::Char(buf))
     }
 
     /// 解析字符串模板，拆为字面量 / 插值表达式片段。
@@ -219,11 +255,14 @@ impl<'a> Lexer<'a> {
                 self.bump();
                 break;
             } else if c == b'\\' {
-                // 保留转义序列原样（Kotlin 与仓颉转义基本一致）。
-                buf.push('\\');
-                self.bump();
-                buf.push(self.bump() as char);
+                self.push_escape(&mut buf);
             } else if c == b'$' {
+                let next = self.peek2();
+                if next != b'{' && !is_ident_start(next) {
+                    buf.push('$');
+                    self.bump();
+                    continue;
+                }
                 if !buf.is_empty() {
                     parts.push(StrPart::Lit(std::mem::take(&mut buf)));
                 }
@@ -245,7 +284,9 @@ impl<'a> Lexer<'a> {
                         }
                         self.bump();
                     }
-                    let expr = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
+                    let expr = std::str::from_utf8(&self.src[start..self.pos])
+                        .unwrap()
+                        .to_string();
                     self.bump(); // }
                     parts.push(StrPart::Expr(expr));
                 } else {
@@ -254,7 +295,9 @@ impl<'a> Lexer<'a> {
                     while is_ident_continue(self.peek()) {
                         self.bump();
                     }
-                    let expr = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
+                    let expr = std::str::from_utf8(&self.src[start..self.pos])
+                        .unwrap()
+                        .to_string();
                     parts.push(StrPart::Expr(expr));
                 }
             } else {
@@ -273,6 +316,33 @@ impl<'a> Lexer<'a> {
         Ok(Tok::Str(parts))
     }
 
+    fn push_escape(&mut self, buf: &mut String) {
+        buf.push('\\');
+        self.bump(); // \
+        if self.pos >= self.src.len() {
+            return;
+        }
+        if self.peek() == b'u' && self.next_four_are_hex() {
+            self.bump(); // u
+            buf.push_str("u{");
+            for _ in 0..4 {
+                buf.push(self.bump() as char);
+            }
+            buf.push('}');
+            return;
+        }
+        buf.push(self.bump() as char);
+    }
+
+    fn next_four_are_hex(&self) -> bool {
+        if self.pos + 4 >= self.src.len() {
+            return false;
+        }
+        self.src[self.pos + 1..self.pos + 5]
+            .iter()
+            .all(|b| b.is_ascii_hexdigit())
+    }
+
     fn lex_raw_string(&mut self) -> Result<Tok, String> {
         self.bump(); // 2nd "
         self.bump(); // 3rd "
@@ -281,8 +351,10 @@ impl<'a> Lexer<'a> {
             if self.pos >= self.src.len() {
                 return Err(format!("line {}: 未闭合的三引号字符串", self.line));
             }
-            if self.peek() == b'"' && self.peek2() == b'"'
-                && self.pos + 2 < self.src.len() && self.src[self.pos + 2] == b'"'
+            if self.peek() == b'"'
+                && self.peek2() == b'"'
+                && self.pos + 2 < self.src.len()
+                && self.src[self.pos + 2] == b'"'
             {
                 self.bump();
                 self.bump();
@@ -307,8 +379,8 @@ impl<'a> Lexer<'a> {
         // 多字符运算符
         let three: Vec<&str> = vec!["===", "!=="]; // 退化为 == / !=
         let two: Vec<&str> = vec![
-            "==", "!=", "<=", ">=", "&&", "||", "++", "--", "+=", "-=", "*=", "/=", "%=",
-            "->", "?.", "?:", "::", "..",
+            "==", "!=", "<=", ">=", "&&", "||", "++", "--", "+=", "-=", "*=", "/=", "%=", "->",
+            "?.", "?:", "::", "..",
         ];
         let rest = std::str::from_utf8(&self.src[self.pos..]).unwrap_or("");
         for s in &three {
