@@ -326,6 +326,8 @@ pub struct Node {
     /// 反向依赖边：依赖本节点的引用集合。
     pub dependents: Vec<NodeId>,
     pub state: State,
+    /// 项目级翻译：本节点所属的源文件索引（0-based），None 表示单文件模式。
+    pub source_file: Option<usize>,
 }
 
 pub struct Graph {
@@ -350,6 +352,7 @@ impl Graph {
             dep: None,
             dependents: Vec::new(),
             state: State::default(),
+            source_file: None,
         });
         id
     }

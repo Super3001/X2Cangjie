@@ -30,6 +30,8 @@ pub enum StrPart {
 pub struct Token {
     pub tok: Tok,
     pub line: usize,
+    /// 字节偏移量（在合并源码中的位置），用于项目级翻译时追踪源文件归属。
+    pub offset: usize,
 }
 
 pub struct Lexer<'a> {
@@ -74,10 +76,12 @@ impl<'a> Lexer<'a> {
         let mut out = Vec::new();
         loop {
             self.skip_ws_and_comments();
+            let offset = self.pos;
             if self.pos >= self.src.len() {
                 out.push(Token {
                     tok: Tok::Eof,
                     line: self.line,
+                    offset,
                 });
                 break;
             }
@@ -106,7 +110,7 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
             }
-            out.push(Token { tok, line });
+            out.push(Token { tok, line, offset });
         }
         Ok(out)
     }

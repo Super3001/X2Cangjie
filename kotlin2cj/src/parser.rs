@@ -15,6 +15,8 @@ pub struct Parser {
     scopes: Vec<HashMap<String, NodeId>>, // name -> Name 节点
     /// 类型别名注册表：`typealias Name = TargetType`。
     pub type_aliases: HashMap<String, String>,
+    /// 项目级翻译：文件字节范围映射 Vec<(start_byte, end_byte)>，索引即文件编号。
+    file_ranges: Option<Vec<(usize, usize)>>,
 }
 
 type PResult<T> = Result<T, String>;
@@ -27,7 +29,26 @@ impl Parser {
             g: Graph::new(),
             scopes: vec![HashMap::new()],
             type_aliases: HashMap::new(),
+            file_ranges: None,
         }
+    }
+
+    /// 设置项目级文件字节范围（用于追踪声明归属）。
+    pub fn set_file_ranges(&mut self, ranges: Vec<(usize, usize)>) {
+        self.file_ranges = Some(ranges);
+    }
+
+    /// 返回当前 token 字节偏移所属的源文件索引（0-based）。
+    fn current_source_file(&self) -> Option<usize> {
+        let ranges = self.file_ranges.as_ref()?;
+        let offset = self.toks[self.pos].offset;
+        for (i, (start, end)) in ranges.iter().enumerate() {
+            if offset >= *start && offset < *end {
+                return Some(i);
+            }
+        }
+        // 如果偏移量超出所有文件范围（如合并源码末尾），归入最后一个文件
+        ranges.iter().enumerate().last().map(|(i, _)| i)
     }
 
     // ---- Token 游标 ----
@@ -119,6 +140,8 @@ impl Parser {
         let mut items = Vec::new();
         self.skip_seps();
         while !self.at_eof() {
+            // 跳过注解前缀（可能出现在 package / import 之前）。
+            self.skip_annotations();
             // 跳过 Kotlin 的 package / import 行（仓颉侧自管导入）。
             if matches!(self.peek(), Tok::Ident(x) if x == "import" || x == "package") {
                 while !matches!(self.peek(), Tok::Newline | Tok::Eof) {
@@ -127,7 +150,11 @@ impl Parser {
                 self.skip_seps();
                 continue;
             }
+            let sf = self.current_source_file();
             let item = self.parse_top_level()?;
+            if sf.is_some() {
+                self.g.nodes[item].source_file = sf;
+            }
             items.push(item);
             self.skip_seps();
         }
@@ -151,6 +178,22 @@ impl Parser {
             self.parse_class(&mods)
         } else if self.is_kw("typealias") {
             self.parse_typealias()
+        } else if self.is_kw("companion") {
+            // Companion object at top level — occurs when a class body was
+            // prematurely closed. Skip the companion gracefully.
+            self.bump(); // companion
+            self.eat_kw("object");
+            if matches!(self.peek(), Tok::Ident(_)) && !self.is_sym("{") {
+                self.bump(); // optional companion name
+            }
+            if self.is_sym("{") {
+                let _ = self.skip_balanced_braces();
+            }
+            Ok(self.g.add(Kind::Raw("companion".into())))
+        } else if self.is_sym("}") {
+            // Stray closing brace at top level — skip
+            self.bump();
+            Ok(self.g.add(Kind::Raw("".into())))
         } else {
             // 顶层语句（少见）——并入隐式块
             self.parse_statement()
@@ -195,7 +238,141 @@ impl Parser {
                 break;
             }
         }
+        self.skip_annotations();
         seen
+    }
+
+    /// Skip Kotlin annotations: `@Name`, `@Name(args)`, `@use-site:Name`, etc.
+    fn skip_annotations(&mut self) {
+        loop {
+            if !self.is_sym("@") {
+                break;
+            }
+            self.bump(); // @
+            self.skip_annotation_name_and_args();
+            self.skip_newlines();
+        }
+    }
+
+    /// After consuming `@`, skip the annotation name (with optional use-site target)
+    /// and optional argument list `(...)`.
+    fn skip_annotation_name_and_args(&mut self) {
+        // Optional use-site target: @target:Name
+        if matches!(self.peek(), Tok::Ident(_)) {
+            self.bump();
+            if self.is_sym(":") {
+                self.bump(); // :
+                // Eat the actual annotation name
+                if matches!(self.peek(), Tok::Ident(_)) {
+                    self.bump();
+                }
+            }
+        }
+        // Eat dotted name parts (e.g. org.junit.Test)
+        while self.is_sym(".") {
+            self.bump(); // .
+            if matches!(self.peek(), Tok::Ident(_)) {
+                self.bump();
+            }
+        }
+        // Optional argument list
+        if self.is_sym("(") {
+            self.skip_balanced_parens();
+        }
+    }
+
+    /// Skip property accessors: `get()`, `get() = expr`, `get() { ... }`,
+    /// `set(value)`, `private set`, `@Ann set`, etc.
+    fn skip_property_accessors(&mut self) {
+        self.skip_newlines();
+        loop {
+            let save = self.pos;
+            self.skip_modifiers();
+            let is_get = self.eat_kw("get");
+            let is_set = self.eat_kw("set");
+            if !is_get && !is_set {
+                self.pos = save;
+                break;
+            }
+            // Optional parameter: set(value) or get()
+            if self.is_sym("(") {
+                self.skip_balanced_parens();
+            }
+            self.skip_newlines();
+            if self.eat_sym("=") {
+                // Single-expression accessor body — parse and discard
+                self.skip_newlines();
+                let _ = self.parse_expr();
+            } else if self.is_sym("{") {
+                // Block accessor body — skip balanced braces
+                let _ = self.skip_balanced_braces();
+            }
+            self.skip_newlines();
+        }
+    }
+
+    /// Skip a balanced `{ ... }` block (without parsing contents).
+    fn skip_balanced_braces(&mut self) -> PResult<()> {
+        self.expect_sym("{")?;
+        let mut depth = 1i32;
+        while depth > 0 && !self.at_eof() {
+            if self.is_sym("{") {
+                depth += 1;
+            } else if self.is_sym("}") {
+                depth -= 1;
+            }
+            // bump AFTER checking so we consume the closing }
+            self.bump();
+        }
+        if depth != 0 {
+            return Err(format!("line {}: 未闭合的块", self.line()));
+        }
+        Ok(())
+    }
+
+    /// Parse anonymous object expression: `object : SuperType(args) { body }`
+    /// or `object { body }`. Returns a Raw placeholder node.
+    /// Caller has already consumed the `object` keyword.
+    fn parse_object_expr(&mut self) -> PResult<NodeId> {
+        if self.eat_sym(":") {
+            // Supertype list
+            loop {
+                self.skip_newlines();
+                if matches!(self.peek(), Tok::Ident(_)) {
+                    self.bump(); // supertype name
+                    // Skip generic args
+                    if self.is_sym("<") {
+                        let mut depth = 1i32;
+                        self.bump();
+                        while depth > 0 && !self.at_eof() {
+                            if self.is_sym("<") {
+                                depth += 1;
+                            } else if self.is_sym(">") {
+                                depth -= 1;
+                            }
+                            self.bump();
+                        }
+                    }
+                    // Skip constructor args
+                    if self.is_sym("(") {
+                        self.skip_balanced_parens();
+                    }
+                } else {
+                    break;
+                }
+                if !self.eat_sym(",") {
+                    break;
+                }
+            }
+        }
+        // Parse object body
+        self.skip_newlines();
+        if self.is_sym("{") {
+            let _ = self.skip_balanced_braces();
+        }
+        // Return placeholder — postfix operations (like .buffer()) are handled by
+        // parse_postfix
+        Ok(self.g.add(Kind::Raw("object".into())))
     }
 
     fn parse_typealias(&mut self) -> PResult<NodeId> {
@@ -439,6 +616,7 @@ impl Parser {
         let mut entries = Vec::new();
         // 解析具名枚举项，直到 `}` 或成员分隔 `;`
         while !self.is_sym("}") && !self.is_sym(";") && !self.at_eof() {
+            self.skip_annotations();
             let entry_name = self.expect_ident()?;
             // 解析枚举项构造实参（如 `RED(0xFF)`）
             let mut entry_args = Vec::new();
@@ -610,6 +788,13 @@ impl Parser {
                     }
                     _ => break,
                 };
+                // Handle dotted supertype names: Outer.Inner, pkg.Outer.Inner
+                let mut sup_name = sup;
+                while self.is_sym(".") && self.peek_next_is_ident() {
+                    self.bump(); // .
+                    let part = self.expect_ident()?;
+                    sup_name = format!("{}.{}", sup_name, part);
+                }
                 if self.is_sym("(") {
                     self.bump();
                     self.skip_newlines();
@@ -622,9 +807,9 @@ impl Parser {
                         self.skip_newlines();
                     }
                     self.expect_sym(")")?;
-                    superclass = Some(safe_name(&sup));
+                    superclass = Some(safe_name(&sup_name));
                 } else {
-                    interfaces.push(safe_name(&sup));
+                    interfaces.push(safe_name(&sup_name));
                 }
                 if !self.eat_sym(",") {
                     break;
@@ -925,6 +1110,8 @@ impl Parser {
                 init = Some(self.parse_expr()?);
             }
         }
+        // 跳过属性访问器 get()/get() = expr/get() { ... } / set(value) / private set
+        self.skip_property_accessors();
         let name_node = self.g.add(Kind::Name {
             original: name.clone(),
         });
@@ -1401,6 +1588,30 @@ impl Parser {
                 self.bump();
                 self.bump();
                 e = self.g.add(Kind::ForceUnwrap { expr: e });
+            } else if self.is_sym("::") {
+                // 双冒号引用：Foo::class, Foo::method
+                self.bump(); // ::
+                let name = self.expect_ident()?;
+                e = self.g.add(Kind::Member {
+                    base: e,
+                    name: format!("::{}", name),
+                    safe: false,
+                });
+            } else if self.is_sym("++") || self.is_sym("--") {
+                // Postfix increment/decrement: x++ / x--
+                let is_inc = self.is_sym("++");
+                self.bump();
+                let one = self.g.add(Kind::IntLit("1".into()));
+                let op = if is_inc { "+=" } else { "-=" };
+                e = self.g.add(Kind::Assign {
+                    target: e,
+                    op: op.into(),
+                    value: one,
+                });
+            } else if self.is_sym("{") {
+                // 无括号尾随 lambda 调用：ident { ... }
+                let lam = self.parse_lambda()?;
+                e = self.g.add(Kind::Call { callee: e, args: vec![lam] });
             } else {
                 break;
             }
@@ -1785,6 +1996,16 @@ impl Parser {
                     self.bump();
                     return Ok(self.g.add(Kind::Raw("None".into())));
                 }
+                if name == "object" {
+                    let save = self.pos;
+                    self.bump(); // object
+                    self.skip_newlines();
+                    if self.is_sym(":") || self.is_sym("{") {
+                        return self.parse_object_expr();
+                    }
+                    // Not an object expression — restore and fall through to NameRef
+                    self.pos = save;
+                }
                 if name == "run"
                     && self.pos + 1 < self.toks.len()
                     && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "{")
@@ -1848,9 +2069,7 @@ impl Parser {
                 }
                 // 用户泛型类构造：`Stack<Int>()` → 保留类型实参 `Stack<Int64>()`，
                 // 以便仓颉为泛型类推断类型参数（首字母大写以区分变量比较）。
-                if name.chars().next().is_some_and(|c| c.is_uppercase())
-                    && self.peek_is_generic_ctor()
-                {
+                if self.peek_is_generic_ctor() {
                     self.bump(); // 类名
                     self.expect_sym("<")?;
                     let mut tys = Vec::new();
@@ -1921,6 +2140,7 @@ impl Parser {
         self.eat_kw("if");
         self.expect_sym("(")?;
         let cond = self.parse_expr()?;
+        self.skip_newlines();
         self.expect_sym(")")?;
         self.skip_newlines();
         let then_b = self.parse_block_or_stmt()?;
@@ -1954,7 +2174,17 @@ impl Parser {
         self.eat_kw("when");
         let mut subject = None;
         if self.eat_sym("(") {
-            subject = Some(self.parse_expr()?);
+            // Handle `when (val x = expr)` — variable declaration in subject
+            if self.is_kw("val") || self.is_kw("var") {
+                self.bump(); // val / var
+                let _name = self.expect_ident()?; // variable name (unused in output)
+                self.expect_sym("=")?;
+                self.skip_newlines();
+                subject = Some(self.parse_expr()?);
+            } else {
+                subject = Some(self.parse_expr()?);
+            }
+            self.skip_newlines();
             self.expect_sym(")")?;
         }
         self.skip_newlines();

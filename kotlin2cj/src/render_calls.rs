@@ -105,14 +105,6 @@ impl Engine {
 
     /// 成员方法调用的特殊映射，返回 None 表示无特殊处理。
     fn render_member_call(&self, base: NodeId, name: &str, args: &[NodeId]) -> Option<String> {
-        if name == "toChars" && args.len() == 1 {
-            if let Kind::NameRef { original, .. } = self.g.kind(base) {
-                if original == "CharsUtils" {
-                    return Some(format!("[Rune(UInt32({}))]", self.t(args[0])?));
-                }
-            }
-        }
-        // 枚举 values()
         if name == "values" && args.is_empty() {
             if let Kind::NameRef { original, .. } = self.g.kind(base) {
                 if let Some(entries) = self.enum_entries(original) {
@@ -136,22 +128,7 @@ impl Engine {
             "isLetterOrDigit" if args.is_empty() && self.looks_char(base) => {
                 Some(format!("({}.isAsciiLetter() || {}.isAsciiNumber())", b, b))
             }
-            "isHighSurrogate" if args.is_empty() => {
-                let code = format!("Int64(UInt32({}))", b);
-                Some(format!(
-                    "({{ => let _c = {}; _c >= 0xD800 && _c <= 0xDBFF }})()",
-                    code
-                ))
-            }
-            "isLowSurrogate" if args.is_empty() => {
-                let code = format!("Int64(UInt32({}))", b);
-                Some(format!(
-                    "({{ => let _c = {}; _c >= 0xDC00 && _c <= 0xDFFF }})()",
-                    code
-                ))
-            }
             "toChar" if args.is_empty() => Some(format!("Rune(UInt32({}))", b)),
-            "toUShort" if args.is_empty() => Some(b),
 
             // ---- String 方法 ----
             "padStart" | "padEnd"
