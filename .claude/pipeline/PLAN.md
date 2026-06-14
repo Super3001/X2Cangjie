@@ -24,15 +24,31 @@ cron --prompt "/goal 'k2cj-optimize target=round_robin'" --schedule "0 */8 * * *
 
 ### 候选目标库
 
-| 目标 | 文件数 | Kotlin 特性覆盖 | 难度 | 状态 |
-|------|--------|----------------|------|------|
-| ksoup | ~120 | data class, companion, sealed, extension, inline | ⭐⭐⭐ | 当前 |
-| okhttp | ~300 | coroutine, interceptor, builder pattern, annotation | ⭐⭐⭐⭐ | 候选 |
-| ktor-client | ~200 | DSL, plugin, coroutine, serialization | ⭐⭐⭐⭐ | 候选 |
-| exposed | ~150 | DSL, type-safe SQL, transaction, delegate | ⭐⭐⭐ | 候选 |
-| mockk | ~100 | DSL, mock, inline, reified, reflection | ⭐⭐⭐⭐⭐ | 候选 |
+| 目标 | 规模 | 核心 Kotlin 特性 | 难度 | 为什么选它 |
+|------|------|-----------------|:--:|---------|
+| **ksoup** | ~120 文件 | data class, companion, sealed, extension, inline func, annotation | ⭐⭐⭐ | HTML parser，语法覆盖均衡，已有翻译历史 |
+| **okhttp** | ~300 文件 | coroutine, interceptor chain, builder, TLS, WebSocket | ⭐⭐⭐⭐ | 网络层旗舰，suspend/callback/流式处理全覆盖 |
+| **ktor-client** | ~200 文件 | DSL, plugin pipeline, serialization, content negotiation | ⭐⭐⭐⭐ | DSL 密集型——极限测试 parser 的嵌套表达能力 |
+| **kotlinx-serialization** | ~150 文件 | annotation processing, KSP, reified, inline class | ⭐⭐⭐⭐⭐ | 编译期代码生成 + 注解处理器——仓颉无直接对应物 |
+| **exposed** | ~150 文件 | type-safe SQL DSL, transaction, delegate property, infix | ⭐⭐⭐ | 委托属性 + 运算符重载 + DSL 三合一 |
+| **mockk** | ~100 文件 | mock, inline, reified, reflection, relaxed mock | ⭐⭐⭐⭐⭐ | 最硬骨头——inline/reified 在仓颉中无直接对应 |
+| **kotlinx-coroutines** | ~200 文件 | suspend, CoroutineScope, Flow, Channel, actor | ⭐⭐⭐⭐⭐ | 协程→仓颉无对应，需 L3 级架构决策（相当于 SOC 的 C→Rust 全局状态问题） |
+| **kotlinx-datetime** | ~80 文件 | multiplatform, expect/actual, typealias, extension | ⭐⭐⭐ | 多平台声明 + 类型别名，测试跨平台抽象翻译 |
+| **koin** | ~120 文件 | DSL, lazy delegate, module definition, qualifier | ⭐⭐⭐ | 依赖注入 DSL——测试 DSL + 委托的组合 |
+| **arrow-core** | ~100 文件 | Either, Option, Validated, extension, infix, typeclass | ⭐⭐⭐⭐ | 函数式编程抽象——Either/Option→仓颉 enum 的映射压力测试 |
 
-> Explorer agent 启动时会自动扫描以上目标，确认可编译性和路径。新增目标加到上表即可。
+### 难度梯度设计
+
+```
+⭐⭐⭐         ⭐⭐⭐⭐              ⭐⭐⭐⭐⭐
+ksoup        okhttp              kotlinx-serialization
+exposed      ktor-client         mockk
+koin         arrow-core          kotlinx-coroutines
+datetime
+```
+
+从易到难逐步推进，和 SOC 慢驱动一致——不在一个目标上过度投资。
+也对应 G8（跨目标泛化）的验证需求：在 ⭐⭐⭐ 级目标上修的 bug，看对 ⭐⭐⭐⭐ 级是否也有效。
 
 ## 阶段状态
 
