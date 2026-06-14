@@ -206,6 +206,12 @@ class IdentityEntry<K, V> <: MutableMap.MutableEntry {
             'func read(bytes: ByteArray, offset: Int64, length: Int64): Int64'
         )
 
+    # -- 2k0: Replace Range.X qualified names (flat namespace) --
+    while 'Range.AttributeRange' in content:
+        content = content.replace('Range.AttributeRange', 'AttributeRange')
+    while 'Range.Position' in content:
+        content = content.replace('Range.Position', 'Position')
+
     # -- 2k1: Replace MutableMap.MutableEntry -> MutableEntry (flat namespace) --
     while 'MutableMap.MutableEntry' in content:
         content = content.replace('MutableMap.MutableEntry', 'MutableEntry')
@@ -309,6 +315,34 @@ if 'MutableMap' in all_content:
     init(k: K, v: V) { this.key = k; this.value = v }
     public open func setValue(newValue: V): V { return newValue }
 }''')
+if 'Entry' in all_content:
+    stub_defs.append('''interface Entry<K, V> {
+    func getKey(): K
+    func getValue(): V
+}''')
+if 'MutableList' in all_content:
+    stub_defs.append('''open class MutableList {
+    public open func add(element: Any): Bool { return true }
+    public open func addAll(elements: Any): Bool { return true }
+    public open func remove(element: Any): Bool { return false }
+    public open func clear(): Unit {}
+    public open func isEmpty(): Bool { return true }
+}''')
+if 'RuntimeException' in all_content:
+    stub_defs.append('''open class RuntimeException <: Exception {
+    init() {}
+    init(msg: String) { super(msg) }
+}''')
+if 'Appendable' in all_content:
+    stub_defs.append('''interface Appendable {
+    func append(csq: Any): Appendable
+    func append(csq: Any, start: Int64, end: Int64): Appendable
+    func append(c: Rune): Appendable
+}''')
+if 'OutputSettings' in all_content:
+    pass  # defined in document.cj
+if '__ArrayLiteral' in all_content and '\'__ArrayLiteral\'' not in str(stub_defs):
+    stub_defs.append('class __ArrayLiteral {}')
 
 if stub_defs:
     with open(STUBS_PATH, 'w') as f:
