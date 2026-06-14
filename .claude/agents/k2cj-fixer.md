@@ -45,9 +45,20 @@
 // 例：Kotlin "String.toByteArray()" → 仓颉 "String.toRuneArray()"
 ```
 
+## 外部知识
+
+修复前**必须先加载**：
+
+1. `references/kotlin-cangjie-patterns.md` — 检查是否已有已知模式可复用
+2. `references/fix-history.md` — 检查同类错误是否已被修复（避免重复劳动）
+3. 按需加载 `.github/skills/cangjie-std/` 等仓颉参考（见 `references/external-knowledge.md`）
+
 ## 约束
 
 - **必须在 worktree 中操作**，不污染主分支
 - **改完必须编译通过**：`cargo build` in worktree
 - **不删已有测试用例**：只增不减
-- **修复后写一行 state**：`state/optimization-state.md` 追加本轮修改摘要
+- **修复后写入**：
+  - `state/optimization-state.md` 追加本轮修改摘要
+  - `references/fix-history.md` 追加修复记录
+  - 如果是新模式 → 追加到 `references/kotlin-cangjie-patterns.md`

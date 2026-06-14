@@ -33,8 +33,19 @@
 }
 ```
 
+## 外部知识
+
+诊断前**必须先加载**以下知识源：
+
+1. `references/kotlin-cangjie-patterns.md` — 已知翻译模式，用于匹配错误根因
+2. `.github/skills/cangjie-std/SKILL.md` — 仓颉标准库，验证类型/方法名是否合法
+3. `.github/skills/cangjie-lang-features/SKILL.md` — 仓颉语法特性，判断是否是语言层面的不可能翻译
+
+加载方式：`read_file` 对应的 SKILL.md，查阅后开始分类。
+
 ## 约束
 
 - 只读翻译产物和错误日志
 - 如无法归类，标记 `unclassified` 等待人工
 - 按 `fix_priority` 排序（render gap 通常最容易 fix，先处理）
+- 发现新翻译模式 → 追加到 `references/kotlin-cangjie-patterns.md`

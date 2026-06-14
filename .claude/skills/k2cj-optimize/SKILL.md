@@ -83,7 +83,20 @@ version: 1.0.0
 
 ## 状态管理
 
-`state/optimization-state.md` 是跨 run 的唯一真相源：
+`state/optimization-state.md` 是跨 run 的唯一真相源。
+
+## 外部知识
+
+本 skill 的知识层分为三层：
+
+| 层级 | 位置 | 内容 | 加载者 |
+|------|------|------|--------|
+| L0 翻译模式 | `references/kotlin-cangjie-patterns.md` | 已知 Kotlin→Cangjie 翻译模式 | diagnostician, fixer |
+| L1 修复历史 | `references/fix-history.md` | 历次修复记录（避免重复） | fixer |
+| L2 仓颉参考 | `.github/skills/cangjie-*/` | 仓颉语言/标准库/规范 | 按需加载 |
+| L3 外部引入 | `references/external-knowledge.md` | 外部知识导入清单和加载规则 | orchestrator |
+
+**知识复利**：每次 fix 不仅修 bug，还追加模式→修复历史→仓颉参考，后续 agent 越来越聪明。
 
 ```markdown
 ## 当前目标: ksoup
