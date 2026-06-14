@@ -113,8 +113,15 @@ impl Engine {
                             func_names.insert(name.clone());
                         }
                         Kind::VarDecl { name_node, .. } => {
-                            if let Kind::Name { original } = &self.g.nodes[*name_node].kind {
-                                var_entries.push((*name_node, original.clone()));
+                            // Check both Name (direct declaration) and NameRef (reference to external decl)
+                            match &self.g.nodes[*name_node].kind {
+                                Kind::Name { original } => {
+                                    var_entries.push((*name_node, original.clone()));
+                                }
+                                Kind::NameRef { original, .. } => {
+                                    var_entries.push((*name_node, original.clone()));
+                                }
+                                _ => {}
                             }
                         }
                         _ => {}

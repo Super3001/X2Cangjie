@@ -38,10 +38,27 @@ impl Engine {
                 }
             }
             Kind::BoolLit(b) => Some(if b { "true".into() } else { "false".into() }),
-            Kind::CharLit(s) => Some(format!("r'{}'", s)),
+            Kind::CharLit(s) => {
+                // Detect surrogate code points (U+D800..U+DFFF) — Cangjie rejects
+                // these in Rune literals. Render as hex integer instead.
+                if let Some(hex_str) = s.strip_prefix("\\u{").and_then(|h| h.strip_suffix("}")) {
+                    if let Ok(val) = u32::from_str_radix(hex_str, 16) {
+                        if (0xD800..=0xDFFF).contains(&val) {
+                            return Some(format!("0x{:X}", val));
+                        }
+                    }
+                }
+                Some(format!("r'{}'", s))
+            }
             Kind::Raw(s) => Some(s),
             Kind::Name { original } => Some(crate::parser::safe_name(&original)),
             Kind::NameRef { original, decl } => {
+                // Kotlin :: prefix — strip for Cangjie (::isIdent → isIdent)
+                let safe_original = if original.starts_with("::") {
+                    crate::parser::safe_name(&original[2..])
+                } else {
+                    crate::parser::safe_name(&original)
+                };
                 if let Some(field) = self.render_singleton_static_field_ref(id, &original, decl) {
                     return Some(field);
                 }
@@ -51,8 +68,8 @@ impl Engine {
                 match decl {
                     Some(d) => self
                         .t(d)
-                        .or_else(|| Some(crate::parser::safe_name(&original))),
-                    None => Some(crate::parser::safe_name(&original)),
+                        .or_else(|| Some(safe_original)),
+                    None => Some(safe_original),
                 }
             }
             Kind::Unary { op, expr } => {
@@ -219,23 +236,7 @@ impl Engine {
                 ty,
                 init,
                 is_lazy,
-            } => {
-                let name = self.t(name_node)?;
-                if init.is_none() && ty.is_none() {
-                    return Some(name);
-                }
-                let kw = if mutable { "var" } else { "let" };
-                let tys = ty.map(|t| format!(": {}", t)).unwrap_or_default();
-                match init {
-                    Some(i) if is_lazy => {
-                        // `by lazy { expr }` → Cangjie: `let x = { expr }()`
-                        // (仓颉暂无 lazy 内置，用立即调用的 lambda 近似)
-                        Some(format!("{} {}{} = {}", kw, name, tys, self.t(i)?))
-                    }
-                    Some(i) => Some(format!("{} {}{} = {}", kw, name, tys, self.t(i)?)),
-                    None => Some(format!("{} {}{}", kw, name, tys)),
-                }
-            }
+            } => self.render_var_decl(mutable, name_node, ty, init, is_lazy),
             Kind::If {
                 cond,
                 then_b,
@@ -534,6 +535,16 @@ impl Engine {
     // ============ 成员访问 ============
 
     fn render_member(&self, base: NodeId, name: &str, safe: bool) -> Option<String> {
+        // Kotlin :: operator: ::class → drop (just base), ::method → strip :: prefix
+        if name.starts_with("::") {
+            let base_str = self.atom(base)?;
+            if name == "::class" {
+                return Some(base_str);
+            }
+            // ::method, ::property etc. → render as base.method (strip ::)
+            let method = &name[2..];
+            return Some(format!("{}.{}", base_str, crate::parser::safe_name(method)));
+        }
         if let Kind::NameRef { original, .. } = self.g.kind(base) {
             if let Some(mapped) = self.render_type_constant(original, name) {
                 return Some(mapped);
@@ -687,6 +698,18 @@ impl Engine {
                 if matches!(self.g.kind(*base), Kind::NameRef { original, .. } if original == "Char")
                     && self.render_type_constant("Char", name).is_some()
         )
+    }
+
+    /// Check if a node is a CharLit with a surrogate code point (U+D800..U+DFFF).
+    fn is_surrogate_char_lit(&self, id: NodeId) -> bool {
+        if let Kind::CharLit(s) = self.g.kind(id) {
+            if let Some(hex_str) = s.strip_prefix("\\u{").and_then(|h| h.strip_suffix("}")) {
+                if let Ok(val) = u32::from_str_radix(hex_str, 16) {
+                    return (0xD800..=0xDFFF).contains(&val);
+                }
+            }
+        }
+        false
     }
 
     fn render_singleton_static_field_ref(
@@ -2003,6 +2026,42 @@ impl Engine {
             self.t(*expr)
         } else {
             self.t(id)
+        }
+    }
+
+    fn render_var_decl(
+        &self,
+        mutable: bool,
+        name_node: NodeId,
+        ty: Option<String>,
+        init: Option<NodeId>,
+        is_lazy: bool,
+    ) -> Option<String> {
+        let name = self.t(name_node)?;
+        if init.is_none() && ty.is_none() {
+            return Some(name);
+        }
+        let kw = if mutable { "var" } else { "let" };
+        // If init is a surrogate CharLit, switch type from Rune to Int64
+        let surrogate = init.is_some_and(|i| self.is_surrogate_char_lit(i));
+        let effective_ty: Option<String> = if surrogate && ty.as_deref() == Some("Rune") {
+            Some("Int64".into())
+        } else {
+            ty.clone()
+        };
+        let tys = effective_ty
+            .as_ref()
+            .map(|t| format!(": {}", t))
+            .unwrap_or_default();
+        if let Some(i) = init {
+            let prefix = if is_lazy {
+                format!("{} {}{} =", kw, name, tys)
+            } else {
+                format!("{} {}{} =", kw, name, tys)
+            };
+            Some(format!("{} {}", prefix, self.t(i)?))
+        } else {
+            Some(format!("{} {}{}", kw, name, tys))
         }
     }
 
