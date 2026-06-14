@@ -2,221 +2,210 @@
 
 - 用例总数: 202
 - 翻译成功: 202/202
-- 仓颉编译通过: 190/202
-- 运行输出匹配: 185/202
+- 仓颉编译通过: 0/202
+- 运行输出匹配: 0/202
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
-| 01_hello | ✅ | ✅ | ✅ |  |
-| 02_arithmetic | ✅ | ✅ | ✅ |  |
-| 03_varval | ✅ | ✅ | ✅ |  |
-| 04_if_else | ✅ | ✅ | ✅ |  |
-| 05_when | ✅ | ✅ | ✅ |  |
-| 06_while | ✅ | ✅ | ✅ |  |
-| 07_for_range | ✅ | ✅ | ✅ |  |
-| 08_for_step_down | ✅ | ✅ | ✅ |  |
-| 09_functions | ✅ | ✅ | ✅ |  |
-| 100_mini_db | ✅ | ✅ | ✅ |  |
-| 101_dp_knapsack | ✅ | ✅ | ✅ |  |
-| 102_bubble_sort | ✅ | ✅ | ✅ |  |
-| 103_binary_search | ✅ | ✅ | ✅ |  |
-| 104_merge_sort | ✅ | ✅ | ✅ |  |
-| 105_quick_sort | ✅ | ✅ | ✅ |  |
-| 106_fibonacci_dp | ✅ | ✅ | ✅ |  |
-| 107_gcd_lcm | ✅ | ✅ | ✅ |  |
-| 108_sieve_primes | ✅ | ✅ | ✅ |  |
-| 109_matrix_multiply | ✅ | ✅ | ✅ |  |
-| 10_recursion | ✅ | ✅ | ✅ |  |
-| 110_stack_impl | ✅ | ✅ | ✅ |  |
-| 111_selection_sort | ✅ | ✅ | ✅ |  |
-| 112_insertion_sort | ✅ | ✅ | ✅ |  |
-| 113_counting_sort | ✅ | ✅ | ✅ |  |
-| 114_dp_lis | ✅ | ✅ | ✅ |  |
-| 115_dp_coin_change | ✅ | ✅ | ✅ |  |
-| 116_two_sum | ✅ | ✅ | ❌ | 输出不符: got='Two sum 9: [Some(0), 1]\nTwo sum 6: [Some(1), 2]\nTwo sum 6: [Some(0), 1]\n' want='Two sum 9: [0, 1]\nTwo sum 6: [1, 2]\nTwo sum 6: [0, 1]\n' |
-| 117_power_fast | ✅ | ✅ | ✅ |  |
-| 118_dp_edit_distance | ✅ | ✅ | ✅ |  |
-| 119_max_subarray | ✅ | ✅ | ✅ |  |
-| 11_list | ✅ | ✅ | ✅ |  |
-| 120_bfs_graph | ✅ | ✅ | ✅ |  |
-| 121_dfs_graph | ✅ | ✅ | ✅ |  |
-| 122_topological_sort | ✅ | ✅ | ✅ |  |
-| 123_dp_lcs | ✅ | ✅ | ✅ |  |
-| 124_dijkstra | ✅ | ✅ | ✅ |  |
-| 125_roman_numerals | ✅ | ❌ | ❌ | [31merror[0m: invalid binary operator '<' on type 'Enum-Option<Int64>' and 'Enum-Option<Int64>' |
-| 126_palindrome | ✅ | ✅ | ✅ |  |
-| 127_nested_generics | ✅ | ✅ | ✅ |  |
-| 128_try_catch_complex | ✅ | ✅ | ✅ |  |
-| 129_multiple_interfaces | ✅ | ✅ | ✅ |  |
-| 12_map | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
-| 130_string_edge_cases | ✅ | ✅ | ✅ |  |
-| 131_nullable_chains | ✅ | ✅ | ✅ |  |
-| 132_when_complex | ✅ | ✅ | ✅ |  |
-| 133_enum_advanced | ✅ | ✅ | ✅ |  |
-| 134_higher_order_funcs | ✅ | ✅ | ✅ |  |
-| 135_data_class_advanced | ✅ | ✅ | ✅ |  |
-| 136_stringbuilder_heavy | ✅ | ✅ | ✅ |  |
-| 137_hashmap_advanced | ✅ | ❌ | ❌ | [31merror[0m: 'add' is not a member of enum 'Option<Class-ArrayList<Struct-String>>' |
-| 138_recursive_expr | ✅ | ✅ | ✅ |  |
-| 139_stack_queue | ✅ | ✅ | ✅ |  |
-| 13_nested_loop | ✅ | ✅ | ✅ |  |
-| 140_loop_patterns | ✅ | ✅ | ✅ |  |
-| 141_sealed_class_adv | ✅ | ✅ | ✅ |  |
-| 142_inheritance_deep | ✅ | ✅ | ✅ |  |
-| 143_graph_components | ✅ | ✅ | ✅ |  |
-| 144_bit_manipulation | ✅ | ✅ | ✅ |  |
-| 145_math_combinatorics | ✅ | ✅ | ✅ |  |
-| 146_matrix_ops | ✅ | ✅ | ✅ |  |
-| 147_interval_scheduling | ✅ | ✅ | ✅ |  |
-| 148_kmp_search | ✅ | ✅ | ✅ |  |
-| 149_bank_accounts | ✅ | ✅ | ✅ |  |
-| 14_boolean | ✅ | ✅ | ✅ |  |
-| 150_event_simulator | ✅ | ✅ | ✅ |  |
-| 151_anagram_groups | ✅ | ❌ | ❌ | [31merror[0m: 'add' is not a member of enum 'Option<Class-ArrayList<Struct-String>>' |
-| 152_min_heap | ✅ | ✅ | ✅ |  |
-| 153_trie | ✅ | ✅ | ✅ |  |
-| 154_lru_cache | ✅ | ❌ | ❌ | [31merror[0m: mismatched types |
-| 155_expr_tokenizer | ✅ | ✅ | ✅ |  |
-| 156_union_find | ✅ | ✅ | ✅ |  |
-| 157_statistics | ✅ | ✅ | ✅ |  |
-| 158_astar_pathfind | ✅ | ✅ | ✅ |  |
-| 159_state_machine_lex | ✅ | ✅ | ✅ |  |
-| 15_class | ✅ | ✅ | ✅ |  |
-| 160_custom_iterator | ✅ | ✅ | ✅ |  |
-| 161_multireturn_logic | ✅ | ✅ | ✅ |  |
-| 162_collection_format | ✅ | ✅ | ❌ | 输出不符: got='apple: Some(3)\nbanana: Some(2)\ncherry: Some(1)\n1 2 3\n4 5 6\n7 8 9\n1-2-3-4-5\n' want='apple: 3\nbanana: 2\ncherry: 1\n1 2 3\n4 5 6\n7 8 9\n1-2-3-4-5\n' |
-| 163_polymorphism_deep | ✅ | ✅ | ✅ |  |
-| 164_recursive_algo | ✅ | ✅ | ✅ |  |
-| 165_enum_direction | ✅ | ✅ | ✅ |  |
-| 166_math_hash | ✅ | ✅ | ✅ |  |
-| 167_string_process | ✅ | ✅ | ✅ |  |
-| 168_game_of_life | ✅ | ✅ | ✅ |  |
-| 169_enum_ctor_params | ✅ | ✅ | ✅ |  |
-| 16_class_mut | ✅ | ✅ | ✅ |  |
-| 170_hashmap_entry | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
-| 171_while_true_return | ✅ | ✅ | ✅ |  |
-| 172_companion_object | ✅ | ✅ | ✅ |  |
-| 173_extension_func | ✅ | ✅ | ✅ |  |
-| 174_destructure_enhanced | ✅ | ✅ | ✅ |  |
-| 175_collection_ops | ✅ | ✅ | ✅ |  |
-| 176_string_ops | ✅ | ✅ | ✅ |  |
-| 177_enum_methods | ✅ | ✅ | ✅ |  |
-| 178_combined_features | ✅ | ✅ | ✅ |  |
-| 179_by_lazy | ✅ | ✅ | ✅ |  |
-| 17_two_classes | ✅ | ✅ | ✅ |  |
-| 180_vararg | ✅ | ✅ | ✅ |  |
-| 181_object_singleton | ✅ | ✅ | ✅ |  |
-| 182_generic_func | ✅ | ✅ | ✅ |  |
-| 183_typealias | ✅ | ✅ | ✅ |  |
-| 184_scope_also | ✅ | ✅ | ✅ |  |
-| 185_string_ops | ✅ | ✅ | ✅ |  |
-| 186_combined_p1p2 | ✅ | ✅ | ✅ |  |
-| 187_collection_ops2 | ✅ | ✅ | ✅ |  |
-| 188_secondary_constructor | ✅ | ✅ | ✅ |  |
-| 189_destructured_lambda | ✅ | ✅ | ✅ |  |
-| 18_break_continue | ✅ | ✅ | ✅ |  |
-| 190_run_block_expr | ✅ | ✅ | ✅ |  |
-| 191_dollar_string_literal | ✅ | ✅ | ✅ |  |
-| 192_primary_constructor_modifier | ✅ | ✅ | ✅ |  |
-| 193_spread_argument | ✅ | ✅ | ✅ |  |
-| 194_multiline_condition | ✅ | ✅ | ✅ |  |
-| 195_unicode_string_escape | ✅ | ✅ | ✅ |  |
-| 196_keyword_with_member | ✅ | ✅ | ✅ |  |
-| 197_nested_class_lift | ✅ | ✅ | ✅ |  |
-| 198_companion_field_name_conflict | ✅ | ✅ | ✅ |  |
-| 199_ksoup_scalar_types | ✅ | ✅ | ✅ |  |
-| 19_string_ops | ✅ | ✅ | ✅ |  |
-| 200_string_index_code_subsequence | ✅ | ✅ | ✅ |  |
-| 201_nullable_lookup_shadow | ✅ | ✅ | ✅ |  |
-| 202_char_surrogate_methods | ✅ | ✅ | ✅ |  |
-| 203_array_spread_concat | ✅ | ✅ | ✅ |  |
-| 204_enum_hashset_vararg_field | ✅ | ✅ | ✅ |  |
-| 205_to_string_radix | ✅ | ✅ | ✅ |  |
-| 206_object_field_init_method | ✅ | ✅ | ✅ |  |
-| 207_object_static_method_call | ✅ | ✅ | ✅ |  |
-| 208_object_static_field_access | ✅ | ✅ | ✅ |  |
-| 209_stringbuilder_append_rune | ✅ | ✅ | ✅ |  |
-| 20_char | ✅ | ✅ | ✅ |  |
-| 210_companion_field_init_ref | ✅ | ✅ | ✅ |  |
-| 211_ushort_supplementary_prefix | ✅ | ✅ | ✅ |  |
-| 212_supplementary_string_slice | ✅ | ✅ | ✅ |  |
-| 213_supplementary_codepoint_tochars | ✅ | ✅ | ✅ |  |
-| 21_bubble_sort | ✅ | ✅ | ✅ |  |
-| 22_gcd | ✅ | ✅ | ✅ |  |
-| 23_primes | ✅ | ✅ | ✅ |  |
-| 24_fizzbuzz | ✅ | ✅ | ✅ |  |
-| 25_fib_list | ✅ | ✅ | ✅ |  |
-| 26_bank | ✅ | ✅ | ✅ |  |
-| 27_stack | ✅ | ✅ | ✅ |  |
-| 28_matrix | ✅ | ✅ | ✅ |  |
-| 29_counters | ✅ | ✅ | ✅ |  |
-| 30_temperature | ✅ | ✅ | ✅ |  |
-| 31_students | ✅ | ✅ | ✅ |  |
-| 32_digits | ✅ | ✅ | ✅ |  |
-| 33_grid | ✅ | ✅ | ✅ |  |
-| 34_float | ✅ | ✅ | ✅ |  |
-| 35_do_while | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 36_repeat | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 37_map_destructure | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
-| 38_nullable | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 39_when_expr | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 40_if_expr | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 41_string_methods | ✅ | ✅ | ✅ | 无 expected，仅验证编译 |
-| 42_bitwise | ✅ | ✅ | ✅ |  |
-| 43_in_range | ✅ | ✅ | ✅ |  |
-| 44_try_catch | ✅ | ✅ | ✅ |  |
-| 45_foreach | ✅ | ✅ | ✅ |  |
-| 46_enum | ✅ | ✅ | ✅ |  |
-| 47_global_const | ✅ | ✅ | ✅ |  |
-| 48_nested_fun | ✅ | ✅ | ✅ |  |
-| 49_string_more | ✅ | ✅ | ✅ |  |
-| 50_data_class | ✅ | ✅ | ✅ |  |
-| 51_state_machine | ✅ | ✅ | ✅ |  |
-| 52_sieve | ✅ | ✅ | ✅ |  |
-| 53_inventory | ✅ | ✅ | ✅ |  |
-| 54_when_string | ✅ | ✅ | ✅ |  |
-| 55_class_methods | ✅ | ✅ | ✅ |  |
-| 56_collatz | ✅ | ✅ | ✅ |  |
-| 57_nested_collections | ✅ | ❌ | ❌ | [31merror[0m: 'add' is not a member of enum 'Option<Class-ArrayList<Int64>>' |
-| 58_hex_binary | ✅ | ✅ | ✅ |  |
-| 59_sealed_eval | ✅ | ✅ | ✅ |  |
-| 60_when_is_shape | ✅ | ✅ | ✅ |  |
-| 61_destructure | ✅ | ❌ | ❌ | [31merror[0m: cannot convert an integer literal to type 'Struct-String' |
-| 62_safe_let | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
-| 63_string_methods2 | ✅ | ✅ | ✅ |  |
-| 64_word_count | ✅ | ✅ | ✅ |  |
-| 65_stack_generic | ✅ | ✅ | ✅ |  |
-| 66_grades | ✅ | ✅ | ✅ |  |
-| 67_rpn | ✅ | ✅ | ✅ |  |
-| 68_maxof | ✅ | ✅ | ✅ |  |
-| 69_safe_call | ✅ | ✅ | ✅ |  |
-| 70_functional_pipeline | ✅ | ✅ | ✅ |  |
-| 71_analytics | ✅ | ✅ | ✅ |  |
-| 72_scoreboard | ✅ | ✅ | ✅ |  |
-| 73_store_sim | ✅ | ✅ | ✅ |  |
-| 74_sorted | ✅ | ✅ | ✅ |  |
-| 75_counter_fold | ✅ | ✅ | ✅ |  |
-| 76_enum_ops | ✅ | ✅ | ✅ |  |
-| 77_library | ✅ | ✅ | ✅ |  |
-| 78_matrix | ✅ | ✅ | ✅ |  |
-| 79_map_values | ✅ | ❌ | ❌ | [31merror[0m: type argument's number does not match type parameter's number |
-| 80_string_scan | ✅ | ✅ | ✅ |  |
-| 81_cards | ✅ | ✅ | ❌ | 输出不符: got='cards=26\ntotal=170\nhearts=13\n5 -> small\n-3 -> neg\n0 -> zero\n42 -> big\n7 -> small\nsum=51 max=42 min=-3\nfibs=0,1,1,2,3,5,8,13,21,34,55\nbyLen=date apple banana cherry\nlong=apple,ban |
-| 82_large_orders | ✅ | ✅ | ❌ | 输出不符: got='=== Catalog ===\n1. Kotlin in Action [Books] $45.00\n2. Apple [Groceries] $0.50\n3. Lego Set [Toys] $80.00\n4. Headphones [Electronics] $120.00\n5. Cookbook [Books] $30.00\n6. Bread [Grocer |
-| 83_large_school | ✅ | ✅ | ❌ | 输出不符: got='Student #1 Alice (grade 10)\nStudent #2 Bob (grade 11)\nStudent #3 Carol (grade 10)\nStudent(id=1, name=Alice, grade=10)\nTotal scores recorded: 8\nAlice avg=85 -> B\nBob avg=77 -> C\nCarol |
-| 84_large_bank | ✅ | ✅ | ✅ |  |
-| 85_large_toolkit | ✅ | ✅ | ✅ |  |
-| 86_payroll | ✅ | ❌ | ❌ | [31merror[0m: type of left operand does not support coalescing operation. coalescing is only valid for 'Option' |
-| 87_calculator | ✅ | ✅ | ✅ |  |
-| 88_graph | ✅ | ✅ | ✅ |  |
-| 89_life | ✅ | ✅ | ✅ |  |
-| 90_expr_interp | ✅ | ✅ | ✅ |  |
-| 91_linked_list | ✅ | ✅ | ✅ |  |
-| 92_observer_pattern | ✅ | ✅ | ✅ |  |
-| 93_builder_pattern | ✅ | ✅ | ✅ |  |
-| 94_state_pattern | ✅ | ✅ | ✅ |  |
-| 95_iterator_pattern | ✅ | ✅ | ✅ |  |
-| 96_strategy_pattern | ✅ | ✅ | ✅ |  |
-| 97_string_parser | ✅ | ✅ | ✅ |  |
-| 98_math_utils | ✅ | ✅ | ✅ |  |
-| 99_task_scheduler | ✅ | ✅ | ✅ |  |
+| 01_hello | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 02_arithmetic | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 03_varval | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 04_if_else | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 05_when | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 06_while | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 07_for_range | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 08_for_step_down | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 09_functions | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 100_mini_db | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 101_dp_knapsack | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 102_bubble_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 103_binary_search | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 104_merge_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 105_quick_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 106_fibonacci_dp | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 107_gcd_lcm | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 108_sieve_primes | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 109_matrix_multiply | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 10_recursion | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 110_stack_impl | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 111_selection_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 112_insertion_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 113_counting_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 114_dp_lis | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 115_dp_coin_change | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 116_two_sum | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 117_power_fast | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 118_dp_edit_distance | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 119_max_subarray | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 11_list | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 120_bfs_graph | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 121_dfs_graph | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 122_topological_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 123_dp_lcs | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 124_dijkstra | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 125_roman_numerals | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 126_palindrome | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 127_nested_generics | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 128_try_catch_complex | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 129_multiple_interfaces | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 12_map | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 130_string_edge_cases | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 131_nullable_chains | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 132_when_complex | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 133_enum_advanced | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 134_higher_order_funcs | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 135_data_class_advanced | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 136_stringbuilder_heavy | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 137_hashmap_advanced | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 138_recursive_expr | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 139_stack_queue | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 13_nested_loop | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 140_loop_patterns | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 141_sealed_class_adv | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 142_inheritance_deep | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 143_graph_components | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 144_bit_manipulation | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 145_math_combinatorics | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 146_matrix_ops | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 147_interval_scheduling | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 148_kmp_search | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 149_bank_accounts | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 14_boolean | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 150_event_simulator | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 151_anagram_groups | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 152_min_heap | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 153_trie | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 154_lru_cache | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 155_expr_tokenizer | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 156_union_find | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 157_statistics | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 158_astar_pathfind | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 159_state_machine_lex | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 15_class | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 160_custom_iterator | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 161_multireturn_logic | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 162_collection_format | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 163_polymorphism_deep | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 164_recursive_algo | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 165_enum_direction | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 166_math_hash | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 167_string_process | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 168_game_of_life | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 169_enum_ctor_params | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 16_class_mut | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 170_hashmap_entry | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 171_while_true_return | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 172_companion_object | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 173_extension_func | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 174_destructure_enhanced | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 175_collection_ops | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 176_string_ops | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 177_enum_methods | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 178_combined_features | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 179_by_lazy | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 17_two_classes | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 180_vararg | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 181_object_singleton | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 182_generic_func | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 183_typealias | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 184_scope_also | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 185_string_ops | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 186_combined_p1p2 | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 187_collection_ops2 | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 188_secondary_constructor | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 189_destructured_lambda | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 18_break_continue | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 190_run_block_expr | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 191_dollar_string_literal | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 192_primary_constructor_modifier | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 193_spread_argument | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 194_multiline_condition | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 195_unicode_string_escape | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 196_keyword_with_member | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 197_nested_class_lift | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 198_companion_field_name_conflict | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 19_string_ops | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 203_array_spread_concat | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 207_object_static_method_call | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 208_object_static_field_access | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 209_stringbuilder_append_rune | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 20_char | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 21_bubble_sort | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 22_gcd | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 23_primes | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 24_fizzbuzz | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 25_fib_list | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 26_bank | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 27_stack | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 28_matrix | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 29_counters | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 30_temperature | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 31_students | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 32_digits | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 33_grid | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 34_float | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 35_do_while | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 36_repeat | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 37_map_destructure | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 38_nullable | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 39_when_expr | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 40_if_expr | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 41_string_methods | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 42_bitwise | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 43_in_range | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 44_try_catch | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 45_foreach | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 46_enum | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 47_global_const | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 48_nested_fun | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 49_string_more | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 50_data_class | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 51_state_machine | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 52_sieve | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 53_inventory | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 54_when_string | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 55_class_methods | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 56_collatz | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 57_nested_collections | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 58_hex_binary | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 59_sealed_eval | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 60_when_is_shape | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 61_destructure | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 62_safe_let | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 63_string_methods2 | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 64_word_count | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 65_stack_generic | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 66_grades | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 67_rpn | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 68_maxof | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 69_safe_call | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 70_functional_pipeline | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 71_analytics | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 72_scoreboard | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 73_store_sim | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 74_sorted | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 75_counter_fold | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 76_enum_ops | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 77_library | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 78_matrix | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 79_map_values | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 80_string_scan | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 81_cards | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 82_large_orders | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 83_large_school | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 84_large_bank | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 85_large_toolkit | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 86_payroll | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 87_calculator | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 88_graph | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 89_life | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 90_expr_interp | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 91_linked_list | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 92_observer_pattern | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 93_builder_pattern | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 94_state_pattern | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 95_iterator_pattern | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 96_strategy_pattern | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 97_string_parser | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 98_math_utils | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |
+| 99_task_scheduler | ✅ | ❌ | ❌ | cjc 不可用，跳过编译 |

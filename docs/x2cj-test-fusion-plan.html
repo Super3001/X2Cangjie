@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>x2cj-test 融合架构方案</title>
+<style>
+  :root{--bg:#0d1117;--bg2:#161b22;--bd:#30363d;--tx:#c9d1d9;--tx2:#8b949e;--ac:#58a6ff;--acb:#1f6feb22;--gn:#3fb950;--gnb:#2ea04322;--yl:#d2991d;--ylb:#bb800922;--rd:#f85149;--rdb:#da363322;--pr:#a371f7}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--tx);display:flex;min-height:100vh;line-height:1.6}
+  #sb{width:250px;min-width:250px;background:var(--bg2);border-right:1px solid var(--bd);position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 12px;user-select:none;font-size:12px}
+  #sb h2{font-size:12px;color:var(--tx2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+  #sb .ns{margin-bottom:10px}
+  #sb .nt{font-weight:600;color:var(--tx);padding:4px 6px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:4px}
+  #sb .nt:hover{background:var(--bd)}
+  #sb .nt::before{content:'▸';font-size:9px;color:var(--tx2);width:10px}
+  #sb .ns.open>.nt::before{transform:rotate(90deg)}
+  #sb .ni{display:none;padding-left:16px;margin-top:2px}
+  #sb .ns.open .ni{display:block}
+  #sb .ni a{display:block;color:var(--tx2);text-decoration:none;padding:2px 6px;border-radius:3px}
+  #sb .ni a:hover{color:var(--ac);background:var(--acb)}
+  #sb .ni a.active{color:var(--ac);background:var(--acb)}
+  #main{flex:1;padding:24px 36px;max-width:920px;overflow-y:auto}
+  h1{font-size:24px;font-weight:700;margin-bottom:4px;color:#f0f6fc}
+  .sub{color:var(--tx2);font-size:12px;margin-bottom:24px}
+  h2{font-size:18px;font-weight:600;margin:32px 0 12px;padding-bottom:5px;border-bottom:1px solid var(--bd);color:#f0f6fc}
+  h3{font-size:14px;font-weight:600;margin:20px 0 8px;color:#f0f6fc}
+  p{margin:0 0 8px}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+  th{text-align:left;padding:6px 8px;color:var(--tx2);font-weight:600;font-size:11px;border-bottom:2px solid var(--bd)}
+  td{padding:6px 8px;border-bottom:1px solid var(--bd);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td:first-child,th:first-child{white-space:nowrap}
+  .b{display:inline-block;padding:1px 6px;border-radius:9px;font-size:10px;font-weight:600}
+  .b.gn{background:var(--gnb);color:var(--gn)}
+  .b.yl{background:var(--ylb);color:var(--yl)}
+  .b.rd{background:var(--rdb);color:var(--rd)}
+  .b.pr{background:var(--pr);color:#fff;font-size:9px}
+  .b.ac{background:var(--acb);color:var(--ac)}
+  pre{background:#0d1117;border:1px solid var(--bd);border-radius:5px;padding:12px;overflow-x:auto;margin:8px 0;font-size:11px;line-height:1.45}
+  code{font-family:'JetBrains Mono','Fira Code',monospace;font-size:11px}
+  p>code,li>code,td>code{background:var(--bd);padding:1px 4px;border-radius:3px;font-size:10px}
+  .tag{display:inline-block;padding:0 5px;border-radius:3px;font-size:9px;font-weight:700;margin-right:3px;vertical-align:middle}
+  .tag.B{background:var(--acb);color:var(--ac)}
+  .tag.C{background:var(--gnb);color:var(--gn)}
+  .card{background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:14px;margin-bottom:12px}
+  .card.bl{border-left:3px solid var(--ac)}
+  .card.gn{border-left:3px solid var(--gn)}
+  .card.rd{border-left:3px solid var(--rd)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}
+  .box{background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:12px;text-align:center}
+  .box .n{font-size:24px;font-weight:700}
+  .box .n.yl{color:var(--yl)}.box .n.rd{color:var(--rd)}.box .n.pr{color:var(--pr)}.box .n.gn{color:var(--gn)}
+  .box .l{font-size:11px;color:var(--tx2);margin-top:2px}
+  .tl{position:relative;padding-left:20px;margin:12px 0}
+  .tl::before{content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;background:var(--bd)}
+  .ti{position:relative;margin-bottom:12px;font-size:12px}
+  .ti::before{content:'';position:absolute;left:-17px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--ac);border:2px solid var(--bg)}
+  .ti .tl{font-size:11px;color:var(--tx2);font-weight:600}
+  .one{background:var(--bg2);border:1px solid var(--bd);border-left:3px solid var(--pr);border-radius:6px;padding:12px 16px;margin:16px 0;font-size:13px;line-height:1.6}
+  blockquote{border-left:2px solid var(--ac);padding:1px 0 1px 12px;margin:8px 0;color:var(--tx2);font-size:12px}
+  ul,ol{margin:5px 0 5px 18px;font-size:12px}
+  li{margin:2px 0}
+  hr{border:0;border-top:1px solid var(--bd);margin:24px 0}
+  .flash{background:var(--ylb);border:1px solid var(--yl);border-radius:4px;padding:8px 12px;margin:8px 0;font-size:12px}
+  .arch-table td:first-child{width:40%}
+</style>
+</head>
+<body>
+
+<nav id="sb">
+  <h2>融合架构方案</h2>
+  <div class="ns open"><div class="nt">仓库与定位</div><div class="ni"><a href="#repo">仓库结构</a><a href="#position">三系统关系</a></div></div>
+  <div class="ns open"><div class="nt">当前现状</div><div class="ni"><a href="#current">问题清单</a></div></div>
+  <div class="ns open"><div class="nt">目标架构</div><div class="ni"><a href="#target-dir">目录结构</a><a href="#pipeline">流水线</a><a href="#knowledge">外部知识</a></div></div>
+  <div class="ns open"><div class="nt">任务清单</div><div class="ni"><a href="#tasks">17项 · ~27.5h</a></div></div>
+  <div class="ns open"><div class="nt">执行计划</div><div class="ni"><a href="#schedule">4天阶段</a></div></div>
+  <div class="ns open"><div class="nt">对比</div><div class="ni"><a href="#comparison">与 kotlin2cj 对比</a></div></div>
+</nav>
+
+<main id="main">
+
+<h1>x2cj-test 融合架构方案</h1>
+<p class="sub">仓库：git@gitcode.com:Cangjie-SIG/x2cj-skills.git · 分支：integrate-test<br>架构 <span class="tag B">B</span> 声明式Gate + <span class="tag C">C</span> Loop/State · 17项任务 · ~27.5h · 4工作日</p>
+
+<!-- ===== 仓库 ===== -->
+<h2 id="repo">一、仓库结构</h2>
+
+<pre><code>Cangjie-SIG/x2cj-skills/
+├── agents/                        ← 16 个 worker agent（已存在）
+│   ├── utgen-agent.md
+│   ├── x2cj-test-fix-agent.md
+│   ├── x2cj-test-mock-agent.md
+│   ├── x2cj-translate-agent.md
+│   ├── x2cj-fix-agent.md
+│   ├── x2cj-fix-orchestrator.md
+│   ├── x2cj-review-agent.md
+│   ├── x2cj-mock-agent.md
+│   └── ... (rule-gen workers)
+├── skills/
+│   ├── x2cj-test/                 ← 本次改造目标
+│   │   ├── SKILL.md (525行)
+│   │   ├── env/  utgen/  mock/  fix/
+│   │   ├── scripts/  template/
+│   │   ├── docs/  output-schema.json
+│   │   └── ← 新增: agents/  guards/  pipeline/  state/
+│   ├── x2cj/                      ← 翻译 skill + rules/（已有）
+│   ├── x2cj-eval/                 ← 语义评估 skill（已有）
+│   └── cangjie-dev/               ← 仓颉开发 skill（已有）
+├── commands/</code></pre>
+
+<h2 id="position">三系统关系</h2>
+
+<pre><code>x2cj（翻译）           x2cj-test（验证）              x2cj-eval（静态评估）
+──────────             ──────────────              ────────────
+Java→仓颉翻译           接收仓颉项目                   LLM 对比 .java↔.cj
+  │                      │                              │
+  │                      ├─ 编译检查                     ├─ API映射
+  │                      ├─ 语义评估 ← 接 x2cj-eval ── ├─ 逻辑一致性
+  │                      ├─ 生成Java测试                 ├─ 实现完整性
+  │                      ├─ 翻译测试                     ├─ 语义正确性
+  │                      └─ 跑测试+修复+报告              └─ 幻觉控制</code></pre>
+
+<div class="card bl">
+x2cj-test 是 x2cj 的下游验证系统。<strong>x2cj-eval 是入口门禁</strong>——编译 + LLM 静态打分，坏翻译在 Stage 2 拦截，不浪费后续 5 个 stage 的测试生成成本。
+</div>
+
+<!-- ===== 当前 ===== -->
+<h2 id="current">二、当前状态</h2>
+
+<table>
+<thead><tr><th>维度</th><th>当前</th><th>问题</th></tr></thead>
+<tr><td>编排</td><td>1 个 525 行 SKILL.md 管 9 个 stage</td><td>调度逻辑和子 skill 混杂</td></tr>
+<tr><td>Agent</td><td>16 个 agent 散落，无 orchestrator</td><td>角色边界模糊，有时越权写代码</td></tr>
+<tr><td>质量门禁</td><td>口头约定</td><td>隐式，不可审计</td></tr>
+<tr><td>触发</td><td>手动</td><td>"跑 x2cj-test"</td></tr>
+<tr><td>状态</td><td>TEST_PLAN.md 单次追踪</td><td>不持久，跨 run 丢失</td></tr>
+<tr><td>外部知识</td><td>只引用 x2cj rules</td><td>缺 x2cj-eval + cangjie 参考</td></tr>
+<tr><td>语义评估</td><td>无</td><td>坏翻译跑完全程才暴露</td></tr>
+</table>
+
+<!-- ===== 目标 ===== -->
+<h2 id="target-dir">三、目标架构</h2>
+
+<h3>目录结构（改造后）</h3>
+
+<pre><code>skills/x2cj-test/
+├── agents/                       ← <span class="tag B">B</span> 新增
+│   ├── orchestrator.md           ← 只调度不执行
+│   ├── gate.md                   ← 只检查不修复 PASS/FIX/STOP
+│   └── explorer.md               ← 项目结构发现
+├── guards/                       ← <span class="tag B">B</span> 新增 ×9
+│   ├── 1-explore-guard.md
+│   ├── 2-compile-eval-guard.md   ← x2cj-eval 入口门禁
+│   ├── 3-mock-guard.md
+│   ├── 4-utgen-guard.md
+│   ├── 5-merge-guard.md
+│   ├── 6-transprep-guard.md
+│   ├── 7-translate-guard.md
+│   ├── 8-fix-guard.md
+│   └── 9-report-guard.md
+├── pipeline/PLAN.md              ← <span class="tag B">B</span> Gate矩阵+Blockers
+├── state/eval-state.md           ← <span class="tag C">C</span> 跨run持久化
+├── gate-records/                 ← Gate审查记录(JSON)
+├── SKILL.md                      ← 525行→~150行
+├── env/ utgen/ mock/ fix/        ← 保留
+├── scripts/ template/ docs/      ← 保留
+└── output-schema.json            ← 保留</code></pre>
+
+<h3 id="pipeline">Agent 流水线</h3>
+
+<pre><code><span class="tag C">C</span> /goal "x2cj-test 验证 &lt;target&gt; 翻译质量"
+
+Stage 1  Explorer ──→ Gate 1
+Stage 2  Compile + x2cj-eval ──→ Gate 2  ← <span class="tag B">B</span> 入口门禁
+           │ PASS (≥75)            FIX (&lt;75)
+           ▼                        ▼
+Stage 3-7                       退回 x2cj
+  Mock→UTGen→Merge→
+  TransPrep→Translate
+Stage 8  编译修复+运行时修复 ──→ Gate 8
+Stage 9  报告生成 ──→ Gate 9 → 🎉</code></pre>
+
+<div class="flash">Worker agent（utgen-agent/test-mock-agent/translate-agent/test-fix-agent/review-agent）全部复用现有 agents/ 目录中的定义，不新建。</div>
+
+<h3 id="knowledge">外部知识</h3>
+
+<p>知识源全部来自同一个仓库（Cangjie-SIG/x2cj-skills），agent 按以下顺序加载：</p>
+
+<pre><code>1. skills/x2cj/rules/          ← 已验证 Java→Cangjie 规则（便宜，本地文件）
+2. skills/cangjie-dev/         ← 仓颉语言/标准库参考
+3. skills/x2cj-eval/skill.md   ← 语义评估标准（14子维度）</code></pre>
+
+<p>加载原则：<strong>便宜先查 → 贵后问</strong>。已有文档能回答的不用 LLM 推理。</p>
+
+<!-- ===== 任务 ===== -->
+<h2 id="tasks">四、任务清单</h2>
+
+<div class="grid">
+  <div class="box"><div class="n yl">5</div><div class="l">🟡 B保留·内容改写</div></div>
+  <div class="box"><div class="n rd">3</div><div class="l">🔴 B新增·隐式→显式</div></div>
+  <div class="box"><div class="n pr">5</div><div class="l">🟣 C新增·时间循环</div></div>
+  <div class="box"><div class="n gn">4</div><div class="l">🟢轻量·复用</div></div>
+</div>
+
+<h3>🟡 架构 B — 内容改写（12h）</h3>
+<table>
+<thead><tr><th>#</th><th>任务</th><th style="text-align:center">工时</th><th>说明</th></tr></thead>
+<tr><td>2</td><td>Orchestrator 拆分</td><td style="text-align:center">3h</td><td>525行→orchestrator(40行)+SKILL.md(150行)</td></tr>
+<tr><td>3</td><td>Worker 引用标准化</td><td style="text-align:center">4h</td><td>x2cj-test 用的6个agent统一 model/tools/output</td></tr>
+<tr><td>4</td><td>PLAN.md 独立</td><td style="text-align:center">2h</td><td>Gate矩阵+Blockers，从SKILL.md剥离</td></tr>
+<tr><td>5</td><td>子 Skill 解耦</td><td style="text-align:center">2h</td><td>env/utgen/mock/fix 去 orchestrator 依赖</td></tr>
+<tr><td>6</td><td>跨 Skill 调用</td><td style="text-align:center">1h</td><td>Stage 7 委托模式</td></tr>
+</table>
+
+<h3>🔴 架构 B — 隐式→显式（12h）</h3>
+<table>
+<thead><tr><th>#</th><th>任务</th><th style="text-align:center">工时</th><th>说明</th></tr></thead>
+<tr><td>7</td><td>Gate Agent</td><td style="text-align:center">3h</td><td>新建 agents/gate.md，只检查不修复</td></tr>
+<tr><td>8</td><td>Guard 文件 ×9</td><td style="text-align:center">6h</td><td>每stage的检查项显式化到 guards/*.md</td></tr>
+<tr><td>10</td><td>Gate 接入</td><td style="text-align:center">3h</td><td>Worker→Gate→下一阶段 通用调度</td></tr>
+</table>
+
+<h3>🟣 架构 C — 时间循环（5.5h）</h3>
+<table>
+<thead><tr><th>#</th><th>任务</th><th style="text-align:center">工时</th><th>说明</th></tr></thead>
+<tr><td>14</td><td>Loop 机制</td><td style="text-align:center">2h</td><td>/goal+cron 自动跑到Pass</td></tr>
+<tr><td>15</td><td>State 持久化</td><td style="text-align:center">1h</td><td>state/eval-state.md 跨run记录</td></tr>
+<tr><td>16</td><td>外部知识链</td><td style="text-align:center">1h</td><td>在agent加载指令中补 x2cj-eval + cangjie-dev 引用</td></tr>
+<tr><td>17</td><td>x2cj-eval 入口门禁</td><td style="text-align:center">1.5h</td><td>Stage 2 插 eval，&lt;50退回翻译</td></tr>
+</table>
+
+<h3>🟢 轻量·复用（~3h）</h3>
+<table>
+<thead><tr><th>#</th><th>任务</th><th style="text-align:center">工时</th><th>说明</th></tr></thead>
+<tr><td>11</td><td>CLAUDE.md</td><td style="text-align:center">0.5h</td><td>AI Team 声明</td></tr>
+<tr><td>12</td><td>Explorer Agent</td><td style="text-align:center">0.5h</td><td>新建 agents/explorer.md</td></tr>
+<tr><td>13</td><td>Reviewer Agent</td><td style="text-align:center">0h</td><td>复用已有 x2cj-review-agent，无需改</td></tr>
+<tr><td>18</td><td>Ledger→State 合并</td><td style="text-align:center">1h</td><td>不单独维护JSONL，走state</td></tr>
+</table>
+
+<h3>🗑 删除</h3>
+<table>
+<thead><tr><th>#</th><th>原因</th></tr></thead>
+<tr><td>1·目录重组</td><td>仓库已有标准目录结构</td></tr>
+</table>
+
+<div class="grid" style="margin-top:16px">
+  <div class="box"><div class="n yl">12h</div><div class="l">🟡 B保留</div></div>
+  <div class="box"><div class="n rd">12h</div><div class="l">🔴 B新增</div></div>
+  <div class="box"><div class="n pr">5.5h</div><div class="l">🟣 C新增</div></div>
+  <div class="box"><div class="n gn">2h</div><div class="l">🟢轻量</div></div>
+</div>
+
+<!-- ===== 计划 ===== -->
+<h2 id="schedule">五、4 天阶段</h2>
+
+<div class="tl">
+  <div class="ti">
+    <div class="tl"><strong>Day 1</strong> (7h)</div>
+    任务 2 · Orchestrator 拆分 (3h)<br>
+    任务 3 · Worker 标准化 (4h)
+  </div>
+  <div class="ti">
+    <div class="tl"><strong>Day 2</strong> (7h)</div>
+    任务 4 · PLAN.md 独立 (2h)<br>
+    任务 5 · 子 Skill 解耦 (2h)<br>
+    任务 7 · Gate Agent (3h)
+  </div>
+  <div class="ti">
+    <div class="tl"><strong>Day 3</strong> (7h)</div>
+    任务 8 · Guard 文件 ×9 (6h)<br>
+    任务 6 · 跨 Skill 调用 (1h)
+  </div>
+  <div class="ti">
+    <div class="tl"><strong>Day 4</strong> (~6.5h)</div>
+    任务 10 · Gate 接入 (3h)<br>
+    任务 14 · Loop 机制 (2h)<br>
+    任务 15 · State 持久化 (1h)<br>
+    任务 16 · 外部知识链 (1h)<br>
+    任务 17 · x2cj-eval 入口门禁 (1.5h)<br>
+    任务 11+12+18 · 轻量 (2h)
+  </div>
+</div>
+
+<!-- ===== 对比 ===== -->
+<h2 id="comparison">六、与 kotlin2cj 优化系统的对比</h2>
+
+<table class="arch-table">
+<thead><tr><th></th><th>kotlin2cj 优化 loop</th><th>x2cj-test 融合方案</th></tr></thead>
+<tr><td><strong>仓库</strong></td><td>SunriseSummer-X2Cangjie</td><td>Cangjie-SIG/x2cj-skills</td></tr>
+<tr><td><strong>做什么</strong></td><td>翻译器自我改进（改 render/heuristics/parser）</td><td>翻译质量验证（不改翻译器）</td></tr>
+<tr><td><strong>源语言</strong></td><td>Kotlin</td><td>Java</td></tr>
+<tr><td><strong>循环驱动</strong></td><td>编译错误数 → 0 errors 收敛</td><td>/goal 跑完全 9 stage 或 cron 定时</td></tr>
+<tr><td><strong>语义评估</strong></td><td>x2cj-eval 在 Stage 3.5（轻量替代运行时测试）</td><td>x2cj-eval 在 Stage 2（入口门禁，坏翻译不浪费后续）</td></tr>
+<tr><td><strong>知识层</strong></td><td>私有（Kotlin模式+fix-history）+ 外部（x2cj rules/cangjie/eval）</td><td>全部来自 x2cj-skills（rules/cangjie/eval）</td></tr>
+<tr><td><strong>收敛判据</strong></td><td>G1(0 errors) + G10(&ge;75)</td><td>Gate 9 PASS</td></tr>
+<tr><td><strong>自动修复</strong></td><td>&#10003; fixer agent 改翻译器源码</td><td>&#10007; 退回 x2cj，附带诊断报告</td></tr>
+<tr><td><strong>多目标</strong></td><td>10 个 Kotlin 目标库，round_robin 轮换</td><td>单一 Java 目标，手动指定</td></tr>
+</table>
+
+<hr>
+
+<div class="one">
+<strong>一句话：</strong>x2cj-test 从 525 行 SKILL.md 管全部的手动 QA 工具，升级为架构 <span class="tag B">B</span>（声明式 Gate + Guard）框架上跑架构 <span class="tag C">C</span>（Loop + State）的自动质量环路——坏翻译在 Stage 2 拦截，好翻译自动跑到验收通过。
+</div>
+
+</main>
+<script>
+document.querySelectorAll('.nt').forEach(t=>{t.addEventListener('click',()=>{t.parentElement.classList.toggle('open')})})
+document.querySelectorAll('.ni a').forEach(l=>{l.addEventListener('click',e=>{e.preventDefault();document.querySelectorAll('.ni a').forEach(x=>x.classList.remove('active'));l.classList.add('active');const t=document.querySelector(l.getAttribute('href'));t&&t.scrollIntoView({behavior:'smooth',block:'start'})})})
+</script>
+</body>
+</html>

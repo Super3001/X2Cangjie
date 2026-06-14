@@ -9,11 +9,13 @@
 
 ## 关键规则
 
+- **Phase 0 先跑** — 任何翻译器修改后、翻译任何目标前，必须先 `cargo test`（187+33 全部通过），1 分钟内确认无回归
 - **Orchestrator 只调度，不执行代码** — 所有修改由 fixer agent 在 worktree 中完成
 - **每个阶段必经 Gate Agent 验收** — 不通过不进下一阶段
 - **State 是唯一真相源** — 读 `state/optimization-state.md` 获取进度，不依赖 context 记忆
 - **回归即回退** — 任何已有测试失败 → 丢弃 worktree，重试
 - **L1 优先** — 先尝试单文件小改，失败了再升级到 L2/L3 多文件改动
+- **难度梯度** — Stage 0 (⭐ baseline) → 1a exception(5) → 1b safety+io(5) → 1c parser(16) → ... 小步快跑，不在一个目标上过度投资
 
 ## Agent 团队
 
