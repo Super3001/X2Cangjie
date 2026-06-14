@@ -1,59 +1,103 @@
-# 外部知识导入清单
+# 外部知识导入规范
 
-k2cj-optimize 的 agent 在执行任务前，应加载以下外部知识源：
+> 统一定义 kotlin2cj 和 x2cj-test 两个项目各自从 x2cj-skills 加载什么知识、以什么顺序加载。
+> 本文件放在 SunriseSummer-X2Cangjie 仓库，供两个项目的 agent 共同遵守。
 
-## 仓颉语言知识（仓库内 `.github/skills/`）
+---
 
-| Skill | 路径 | 何时加载 | 加载者 |
-|-------|------|---------|--------|
-| cangjie-lang-features | `.github/skills/cangjie-lang-features/SKILL.md` | 仓颉语法特性不确定时 | fixer, diagnostician |
-| cangjie-std | `.github/skills/cangjie-std/SKILL.md` | 标准库函数映射不确定时 | fixer, translator |
-| cangjie-stdx | `.github/skills/cangjie-stdx/SKILL.md` | 扩展标准库映射不确定时 | fixer |
-| cangjie-regulations | `.github/skills/cangjie-regulations/SKILL.md` | 编码规范/项目结构不确定时 | fixer |
-| cangjie-toolchains | `.github/skills/cangjie-toolchains/SKILL.md` | cjpm build/test 命令不确定时 | translator, verifier |
-| cangjie-original-docs | `.github/skills/cangjie-original-docs/SKILL.md` | 深度语言特性查阅时 | diagnostician |
+## 一、知识源（x2cj-skills 提供）
 
-## Java→Cangjie 已验证翻译规则（`~/x2cj-skills/skills/x2cj/rules/`）
+所有外部知识来自 `~/x2cj-skills/`，按类别三层：
 
-| 领域 | 路径 | 何时加载 | 加载者 |
-|------|------|---------|--------|
-| basic/syntax | `rules/docs/basic/syntax.md` (255行) | 类型映射、关键字转义、lambda | fixer, diagnoser |
-| IO | `rules/docs/io/*.md` (18个文件) | Stream/Reader/Writer/序列化映射 | fixer |
-| thread | `rules/docs/thread/*.md` | 线程/ThreadLocal 映射 | fixer |
-| android | `rules/docs/android/*.md` | Android API 映射（目标含 Android 时） | fixer |
-| logging/uuid | `rules/docs/logging/`, `rules/docs/uuid/` | 工具类映射 | fixer |
+### 翻译规则（已验证的 Java→Cangjie 映射）
 
-> 这些规则是 **Java→Cangjie** 的，但对 Kotlin→Cangjie 直接适用——Kotlin 和 Java 共享 JVM 类型系统、集合框架、IO API。fixer 在遇到类型映射不确定时优先查 x2cj rules，它包含了已验证的 `Int→Int64`、`byte→Int8`、`Object→Any` 等映射。
+| 路径 | 内容 | 行数 |
+|------|------|:--:|
+| `skills/x2cj/rules/docs/basic/syntax.md` | 类型映射、关键字转义、lambda | 255 |
+| `skills/x2cj/rules/docs/io/*.md` | Stream/Reader/Writer/序列化 | 18 文件 |
+| `skills/x2cj/rules/docs/thread/*.md` | 线程/ThreadLocal | 2 文件 |
+| `skills/x2cj/rules/docs/android/*.md` | Android API 映射 | 多文件 |
+| `skills/x2cj/rules/docs/logging/` | 日志 | 1 文件 |
+| `skills/x2cj/rules/docs/uuid/` | UUID | 1 文件 |
+| `skills/x2cj/rules/tpc-dependency-mapping.md` | TPC 依赖映射 | — |
+| `skills/x2cj/rules/code-style.md` | 代码风格 | — |
 
-## 差分测试设施（`~/x2cj/skills/x2cj-test/`）
+### 仓颉语言参考
 
-| 资产 | 路径 | 何时加载 | 加载者 |
-|------|------|---------|--------|
-| SKILL.md | `skills/x2cj-test/SKILL.md` | 语义验证阶段 | verifier |
-| output-schema | `skills/x2cj-test/references/output-schema.json` | 语义验证输出格式 | verifier |
-| Java env setup | `skills/x2cj-test/references/env-setup-java.md` | 准备 Java 测试环境 | verifier |
-| Cangjie env setup | `skills/x2cj-test/references/env-setup-cangjie.md` | 准备仓颉测试环境 | verifier |
+| 路径 | 内容 |
+|------|------|
+| `skills/cangjie-dev/SKILL.md` | 仓颉开发总入口 |
+| 其下子文档 | 语法特性、标准库、扩展库、工具链 |
 
-> x2cj-test 已实现完整的差分测试流水线：Java 跑测试 → 翻译测试 → 仓颉跑测试 → 对比输出。kotlin2cj 的语义验证直接复用这套设施，只需将 `x2cj` 翻译步骤替换为 `kotlin2cj`。
+### 评估标准
 
-## 翻译模式知识（本 skill 内）
+| 路径 | 内容 |
+|------|------|
+| `skills/x2cj-eval/skill.md` | LLM 语义评估流程 + prompt 模板（14 子维度） |
 
-| 文件 | 路径 | 何时加载 | 加载者 |
-|------|------|---------|--------|
-| kotlin-cangjie-patterns.md | `references/kotlin-cangjie-patterns.md` | 每次诊断/修复前 | diagnostician, fixer |
-| fix-history.md | `references/fix-history.md` | 每次修复前（避免重复） | fixer |
+---
 
-## 加载规则
+## 二、各项目加载声明
 
-1. **diagnostician 启动时**：加载 `cangjie-std` + `cangjie-lang-features` + `kotlin-cangjie-patterns.md`
-2. **fixer 启动时**：加载 `kotlin-cangjie-patterns.md` + `fix-history.md` + 按需加载仓颉 skill
-3. **translator 启动时**：加载 `cangjie-toolchains`（确认 cjpm 命令）
-4. **verifier 启动时**：加载 `cangjie-toolchains`（确认测试命令）
+### kotlin2cj 优化系统
 
-## 外部知识扩展
+**加载者**：k2cj-diagnostician、k2cj-fixer、k2cj-verifier
 
-当遇到新模式时，fixer 应在提交修复的同时：
-1. 追加条目到 `kotlin-cangjie-patterns.md`
-2. 追加条目到 `fix-history.md`
+**加载顺序**：
 
-这形成了 **知识的复利**：每次修复不仅解决当前问题，还丰富了后续 agent 的决策依据。
+```
+1. kotlin-cangjie-patterns.md     ← 项目私有：Kotlin→Cangjie 已知模式（本项目特有）
+2. fix-history.md                 ← 项目私有：历次修复记录（避免重复）
+3. x2cj rules (syntax > io > ...) ← 外部：Java→Cangjie 规则（Kotlin 和 Java 共享 JVM 生态）
+4. cangjie-dev 语言参考            ← 外部：确认仓颉 API 合法性
+5. x2cj-eval                      ← 外部：语义评估标准（G10 判据）
+```
+
+> Kotlin 和 Java 共享 JVM 类型系统和大量 API——x2cj 的 Java 规则对 Kotlin 翻译直接适用。
+
+### x2cj-test 验证系统
+
+**加载者**：x2cj-test orchestrator、review-agent、gate-agent
+
+**加载顺序**：
+
+```
+1. x2cj rules (syntax > io > ...) ← 外部：Java→Cangjie 规则（验证翻译是否遵循已知规则）
+2. cangjie-dev 语言参考            ← 外部：确认仓颉侧的 API/语法是否正确
+3. x2cj-eval                      ← 外部：语义评估标准（Stage 2 入口门禁）
+```
+
+> x2cj-test 不需要项目私有知识——它是通用验证系统，不绑定特定源语言的项目模式。
+
+---
+
+## 三、加载规则
+
+### 时机
+
+- **diagnostician / fixer**：每次被调用时加载（任务之间上下文不共享）
+- **verifier / reviewer**：语义评估阶段加载
+- **gate-agent**：执行 guard 检查前按需加载（如 Stage 2 guard 需要 x2cj-eval 的评分标准）
+
+### 顺序原则
+
+```
+便宜先查 → 贵后问
+   │           │
+   │      ┌────┴────┐
+   │      │         │
+本地文件  已有规则   LLM自由裁量
+（0 token）（已有答案）（需要推理）
+```
+
+1. 先查本地私有知识（已有答案，不走 LLM）
+2. 再查外部规则（已验证映射，有文档依据）
+3. 再查语言参考（确认语法/API 合法性）
+4. 最后查评估标准（判断"对不对"的依据）
+5. 以上都不确定时，才让 LLM 自行判断
+
+### 不做的事
+
+- ❌ agent 不跨项目加载对方的私有知识
+- ❌ 不把规则文档全文塞进 prompt（只查相关条目）
+- ❌ 不在对话 context 里记知识查询结果（查完就用，不缓存到 context）

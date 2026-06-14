@@ -87,20 +87,20 @@ version: 1.0.0
 
 ## 外部知识
 
-本 skill 的知识层：
+本 skill 的知识来源分两部分：**项目私有**（本仓库）+ **外部共用**（x2cj-skills 提供）。
 
-| 层级 | 位置 | 内容 | 加载者 |
+| 类型 | 位置 | 内容 | 谁加载 |
 |------|------|------|--------|
-| L0 翻译模式 | `references/kotlin-cangjie-patterns.md` | Kotlin→Cangjie 已知翻译模式 | diagnostician, fixer |
-| L1 修复历史 | `references/fix-history.md` | 历次修复记录（避免重复） | fixer |
-| L2 优化目标 | `references/optimization-goals.md` | 10 项优化目标（G1-G10） | orchestrator |
-| L3 语义保持 | `references/G10-semantic-preservation.md` | 差分测试设计 + 验证 stage | verifier, diagnosticator |
-| L4 仓颉参考 | `.github/skills/cangjie-*/` | 仓颉语言/标准库/规范 | 按需加载 |
-| L5 x2cj 翻译规则 | `~/x2cj-skills/skills/x2cj/rules/` | Java→Cangjie 已验证翻译规则（syntax/IO/线程/Android） | fixer, diagnosticator |
-| L6 差分测试设施 | `~/x2cj/skills/x2cj-test/` | Java→Cangjie 差分测试工作流 + output-schema | verifier |
-| L7 外部引入 | `references/external-knowledge.md` | 外部知识导入清单和加载规则 | orchestrator |
+| **私有** | `references/kotlin-cangjie-patterns.md` | Kotlin→Cangjie 翻译模式 | diagnostician, fixer |
+| **私有** | `references/fix-history.md` | 历次修复记录 | fixer |
+| **私有** | `references/optimization-goals.md` | 10 项优化目标（G1-G10） | orchestrator |
+| **私有** | `references/G10-semantic-preservation.md` | 语义验证设计 | verifier |
+| **外部** | `~/x2cj-skills/skills/x2cj/rules/` | Java→Cangjie 已验证规则 | fixer, diagnostician |
+| **外部** | `~/x2cj-skills/skills/cangjie-dev/` | 仓颉语言/标准库/规范 | fixer, verifier |
+| **外部** | `~/x2cj-skills/skills/x2cj-eval/` | LLM 语义评估（14 子维度） | verifier |
+| 加载顺序和规则详见 `references/external-knowledge.md`。 | | | |
 
-**知识复利**：每次 fix 不仅修 bug，还追加模式→修复历史→仓颉参考。x2cj-skills 的 Java 规则对 Kotlin 翻译有直接参考价值（共享 JVM 类型系统和大量 API）。
+> 私有知识是项目累积的（每次 fix 追加模式+记录），外部知识是只读参考（从 x2cj-skills 查询）。两者不混放。
 
 ```markdown
 ## 当前目标: ksoup
