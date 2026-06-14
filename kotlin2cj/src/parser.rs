@@ -151,12 +151,43 @@ impl Parser {
                 continue;
             }
             let sf = self.current_source_file();
-            let item = self.parse_top_level()?;
-            if sf.is_some() {
-                self.g.nodes[item].source_file = sf;
+            match self.parse_top_level() {
+                Ok(item) => {
+                    if sf.is_some() {
+                        self.g.nodes[item].source_file = sf;
+                    }
+                    items.push(item);
+                }
+                Err(_e) => {
+                    // 合并翻译中某声明解析失败时，跳过至下一 package 边界继续
+                    // 确保退出所有嵌套上下文（跳过直至遇到 package 声明或 EOF）
+                    let mut depth = 0i32;
+                    while !self.at_eof() {
+                        if matches!(self.peek(), Tok::Ident(x) if x == "package") && depth == 0 {
+                            break;
+                        }
+                        if self.is_sym("{") { depth += 1; }
+                        if self.is_sym("}") { depth -= 1; }
+                        self.bump();
+                    }
+                    // 将作用域重置到全局（丢弃所有嵌套作用域）
+                    while self.scopes.len() > 1 {
+                        self.scopes.pop();
+                    }
+                }
             }
-            items.push(item);
             self.skip_seps();
+            // 诊断：检测合并翻译中的 scope 泄漏
+            if self.scopes.len() > 1 {
+                eprintln!(
+                    "WARNING: scope leak depth={} at line {}",
+                    self.scopes.len() - 1,
+                    self.line()
+                );
+                while self.scopes.len() > 1 {
+                    self.scopes.pop();
+                }
+            }
         }
         let root = self.g.add(Kind::Program { items });
         self.g.root = root;
@@ -164,9 +195,45 @@ impl Parser {
     }
 
     fn parse_top_level(&mut self) -> PResult<NodeId> {
+        // 合并翻译末尾可能出现残留空行/EOF，直接跳过
+        if self.at_eof() {
+            return Ok(self.g.add(Kind::Raw("".into())));
+        }
         // 跳过可见性 / 修饰符
         let mods = self.skip_modifiers();
+        // 如果当前 token 不是已知声明关键字，尝试容错跳过
+        if !self.is_kw("fun")
+            && !self.is_kw("enum")
+            && !self.is_kw("class")
+            && !self.is_kw("data")
+            && !self.is_kw("object")
+            && !self.is_kw("interface")
+            && !self.is_kw("typealias")
+            && !self.is_kw("companion")
+            && !self.is_sym("}")
+            && !self.is_kw("val")
+            && !self.is_kw("var")
+        {
+            // 跳过无法识别的顶层内容直到下一个声明或 EOF
+            while !self.at_eof()
+                && !self.is_kw("fun")
+                && !self.is_kw("class")
+                && !self.is_kw("val")
+                && !self.is_kw("var")
+                && !self.is_kw("object")
+                && !self.is_kw("interface")
+                && !self.is_kw("enum")
+            {
+                self.bump();
+            }
+            return Ok(self.g.add(Kind::Raw("".into())));
+        }
         if self.is_kw("fun") {
+            // `fun interface` 是 Kotlin SAM/函数式接口，不是函数声明。
+            if self.peek_next_is_kw("interface") {
+                self.bump(); // 跳过 `fun`
+                return self.parse_class(&mods);
+            }
             self.parse_fun(&mods)
         } else if self.is_kw("enum") {
             self.parse_enum()
@@ -223,6 +290,8 @@ impl Parser {
             "suspend",
             "external",
             "annotation",
+            "expect",
+            "actual",
         ];
         let mut seen = Vec::new();
         loop {
@@ -300,15 +369,39 @@ impl Parser {
             }
             self.skip_newlines();
             if self.eat_sym("=") {
-                // Single-expression accessor body — parse and discard
-                self.skip_newlines();
-                let _ = self.parse_expr();
+                // 跳过单表达式访问器体，不解析（避免 parse_expr 在合并翻译末尾失败）
+                while !matches!(self.peek(), Tok::Newline | Tok::Eof)
+                    && !self.is_sym("}")
+                    && !self.is_kw("get")
+                    && !self.is_kw("set")
+                {
+                    self.bump();
+                }
             } else if self.is_sym("{") {
                 // Block accessor body — skip balanced braces
                 let _ = self.skip_balanced_braces();
             }
             self.skip_newlines();
         }
+    }
+
+    /// 试探性跳过 `<...>` 泛型实参。成功时返回 true。
+    fn try_skip_generic_args(&mut self) -> bool {
+        if !self.eat_sym("<") {
+            return false;
+        }
+        let mut depth = 1i32;
+        while depth > 0 {
+            let tok = self.peek().clone();
+            match tok {
+                Tok::Sym(s) if s == "<" => { self.bump(); depth += 1; }
+                Tok::Sym(s) if s == ">" => { self.bump(); depth -= 1; }
+                Tok::Sym(s) if s == ">>" => { self.bump(); depth -= 2; }
+                Tok::Eof => return false,
+                _ => { self.bump(); }
+            }
+        }
+        true
     }
 
     /// Skip a balanced `{ ... }` block (without parsing contents).
@@ -397,12 +490,22 @@ impl Parser {
             if self.is_sym("<") {
                 depth += 1;
                 gen_tokens.push("<".to_string());
-            } else if self.is_sym(">") {
+            } else if self.is_sym(">") || self.is_sym(">>") {
+                let is_double = self.is_sym(">>");
                 depth -= 1;
                 gen_tokens.push(">".to_string());
                 if depth == 0 {
                     self.bump();
                     break;
+                }
+                // `>>` = 两个连续的 `>`，第二层在下一轮处理
+                if is_double {
+                    depth -= 1;
+                    gen_tokens.push(">".to_string());
+                    if depth == 0 {
+                        self.bump();
+                        break;
+                    }
                 }
             } else if self.at_eof() {
                 break;
@@ -417,10 +520,20 @@ impl Parser {
                     if s == "," && depth == 1 {
                         expect_name = true;
                     }
-                    // Skip upper bound constraint `: Bound`
+                    // Skip upper bound constraint `: Bound`（含嵌套泛型如 `Comparable<T>`）
                     if s == ":" {
                         self.bump();
-                        while !self.is_sym(",") && !self.is_sym(">") && !self.at_eof() {
+                        let mut bdepth = 0i32;
+                        while !self.at_eof() {
+                            if self.is_sym("<") { bdepth += 1; }
+                            else if self.is_sym(">") || self.is_sym(">>") {
+                                if bdepth == 0 {
+                                    self.bump(); // 消费边界结束 `>`
+                                    break;
+                                }
+                                bdepth -= 1;
+                            }
+                            else if self.is_sym(",") && bdepth == 0 { break; }
                             self.bump();
                         }
                         continue;
@@ -443,19 +556,25 @@ impl Parser {
             self.parse_generic_params(&mut generic_params, &mut generic_suffix);
         }
         let mut name = self.expect_ident()?;
-        // Also handle generic params AFTER the function name: `fun name<T>(...)`
+        // 跳过接收者类型上的泛型实参（如 `fun <T> ArrayList<T>.foo()` 中的 `<T>`），
+        // 这样后续扩展函数解析时 receiver_type = ArrayList + generic_suffix (= <T>)。
+        if self.is_sym("<") && !generic_params.is_empty() {
+            let _ = self.try_skip_generic_args();
+        }
+        // 函数自身泛型形参：`fun name<T>(...)`（仅在无 `<` 前缀且确认为函数泛型时）
         if self.is_sym("<") && generic_params.is_empty() {
             self.parse_generic_params(&mut generic_params, &mut generic_suffix);
         }
-        // 扩展函数：`fun ReceiverType.name(...)` 或 `fun Type<T>.name(...)` → extend 语法
+        // 扩展函数：`fun ReceiverType.name(...)` 或 `fun A.B.name(...)` → extend 语法
         let mut receiver_type: Option<String> = None;
-        if self.eat_sym(".") {
-            // `name` + generic_suffix was actually the receiver type
-            let recv = format!("{}{}", map_type(&name), generic_suffix);
+        while self.eat_sym(".") {
+            let recv = if let Some(prev) = receiver_type.take() {
+                format!("{}.{}", prev, map_type(&name))
+            } else {
+                format!("{}{}", map_type(&name), generic_suffix)
+            };
             receiver_type = Some(recv);
             name = self.expect_ident()?;
-            // Extension function generics in Kotlin bind to the receiver type, not the
-            // function itself. Clear to prevent duplication in rendered `extend` block.
             generic_params.clear();
         }
         self.push_scope();
@@ -502,7 +621,8 @@ impl Parser {
         self.expect_sym("(")?;
         self.skip_newlines();
         while !self.is_sym(")") {
-            self.skip_modifiers();
+            // 不调用 skip_modifiers()——它会把参数名 `open`、`internal` 等误识别为修饰符。
+            // 常规函数参数无修饰符（构造器参数的 val/var 在 parse_class 中单独处理）。
             let is_vararg = self.eat_kw("vararg");
             let pname = self.expect_ident()?;
             self.expect_sym(":")?;
@@ -650,7 +770,12 @@ impl Parser {
             while !self.is_sym("}") && !self.at_eof() {
                 let mmods = self.skip_modifiers();
                 if self.is_kw("fun") {
-                    enum_members.push(self.parse_fun(&mmods)?);
+                    if self.peek_next_is_kw("interface") {
+                        self.bump();
+                        enum_members.push(self.parse_class(&mmods)?);
+                    } else {
+                        enum_members.push(self.parse_fun(&mmods)?);
+                    }
                 } else {
                     // 跳过其他成员
                     self.bump();
@@ -732,6 +857,7 @@ impl Parser {
         }
         self.skip_modifiers();
         self.eat_kw("constructor");
+        self.skip_newlines();
         let mut ctor_params = Vec::new();
         if self.eat_sym("(") {
             self.skip_newlines();
@@ -795,6 +921,20 @@ impl Parser {
                     let part = self.expect_ident()?;
                     sup_name = format!("{}.{}", sup_name, part);
                 }
+                // 跳过泛型实参（如 `Map.Entry<String, String?>`）
+                if self.eat_sym("<") {
+                    let mut depth = 1i32;
+                    while depth > 0 {
+                        let tok = self.peek().clone();
+                        match tok {
+                            Tok::Sym(s) if s == "<" => { self.bump(); depth += 1; }
+                            Tok::Sym(s) if s == ">" => { self.bump(); depth -= 1; }
+                            Tok::Sym(s) if s == ">>" => { self.bump(); depth -= 2; }
+                            Tok::Eof => break,
+                            _ => { self.bump(); }
+                        }
+                    }
+                }
                 if self.is_sym("(") {
                     self.bump();
                     self.skip_newlines();
@@ -810,6 +950,13 @@ impl Parser {
                     superclass = Some(safe_name(&sup_name));
                 } else {
                     interfaces.push(safe_name(&sup_name));
+                }
+                // 跳过 `by` 委托实现（如 `class Foo : Bar by baz()`）
+                if self.eat_kw("by") {
+                    // 跳过委托表达式直到 `,` 或 `{`
+                    while !self.is_sym(",") && !self.is_sym("{") && !self.at_eof() {
+                        self.bump();
+                    }
                 }
                 if !self.eat_sym(",") {
                     break;
@@ -827,7 +974,13 @@ impl Parser {
             while !self.is_sym("}") && !self.at_eof() {
                 let mmods = self.skip_modifiers();
                 if self.is_kw("fun") {
-                    members.push(self.parse_fun(&mmods)?);
+                    // `fun interface` 是 Kotlin SAM/函数式接口，不是函数声明。
+                    if self.peek_next_is_kw("interface") {
+                        self.bump(); // 跳过 `fun`
+                        members.push(self.parse_class(&mmods)?);
+                    } else {
+                        members.push(self.parse_fun(&mmods)?);
+                    }
                 } else if self.is_kw("constructor") {
                     members.push(self.parse_secondary_constructor()?);
                 } else if self.is_kw("val") || self.is_kw("var") {
@@ -853,9 +1006,16 @@ impl Parser {
                         while !self.is_sym("}") && !self.at_eof() {
                             let cmods = self.skip_modifiers();
                             if self.is_kw("fun") {
-                                let func = self.parse_fun(&cmods)?;
-                                companion_members.push(func);
-                                members.push(func);
+                                if self.peek_next_is_kw("interface") {
+                                    self.bump();
+                                    let iface = self.parse_class(&cmods)?;
+                                    companion_members.push(iface);
+                                    members.push(iface);
+                                } else {
+                                    let func = self.parse_fun(&cmods)?;
+                                    companion_members.push(func);
+                                    members.push(func);
+                                }
                             } else if self.is_kw("val") || self.is_kw("var") {
                                 let v = self.parse_var_decl()?;
                                 companion_members.push(v);
@@ -970,6 +1130,11 @@ impl Parser {
         }
         if self.is_kw("return") {
             self.bump();
+            // `return@label` 标签返回 — 仓颉无标签，直接丢弃标签
+            if self.is_sym("@") {
+                self.bump();
+                self.expect_ident()?;
+            }
             if matches!(self.peek(), Tok::Newline | Tok::Eof)
                 || self.is_sym("}")
                 || self.is_sym(";")
@@ -998,10 +1163,20 @@ impl Parser {
         }
         if self.is_kw("break") {
             self.bump();
+            // `break@label` 标签跳出
+            if self.is_sym("@") {
+                self.bump();
+                self.expect_ident()?;
+            }
             return Ok(self.g.add(Kind::Raw("break".into())));
         }
         if self.is_kw("continue") {
             self.bump();
+            // `continue@label` 标签继续
+            if self.is_sym("@") {
+                self.bump();
+                self.expect_ident()?;
+            }
             return Ok(self.g.add(Kind::Raw("continue".into())));
         }
         if self.is_kw("fun") {
@@ -1403,6 +1578,18 @@ impl Parser {
                 break;
             }
         }
+        // 重新检查 elvis 运算符：`expr as? Type ?: default` 中，`?:` 优先级低于 `as?`，
+        // 但 `parse_elvis` 在 `as?` 之前已被调用，此处需要二次检查。
+        self.skip_newlines();
+        if self.eat_sym("?:") {
+            self.skip_newlines();
+            let rhs = self.parse_named_checks()?;
+            lhs = self.g.add(Kind::Binary {
+                op: "?:".into(),
+                lhs,
+                rhs,
+            });
+        }
         Ok(lhs)
     }
     fn parse_elvis(&mut self) -> PResult<NodeId> {
@@ -1453,10 +1640,15 @@ impl Parser {
 
     fn parse_range(&mut self) -> PResult<NodeId> {
         let lo = self.parse_additive()?;
-        // a..b / a until b / a downTo b (可带 step)
+        // a..b / a..<b / a until b / a downTo b (可带 step)
         let (inclusive, down, is_range) = if self.is_sym("..") {
             self.bump();
-            (true, false, true)
+            // Kotlin `..<` 开区间运算符 (rangeUntil)
+            if self.eat_sym("<") {
+                (false, false, true)
+            } else {
+                (true, false, true)
+            }
         } else if self.is_kw("until") {
             self.bump();
             (false, false, true)
@@ -1492,7 +1684,11 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> PResult<NodeId> {
-        if self.is_sym("!") || self.is_sym("-") || self.is_sym("+") || self.is_sym("*") {
+        if self.is_sym("!") || self.is_sym("-") || self.is_sym("+") || self.is_sym("*")
+            || self.is_sym("++") || self.is_sym("--")
+        {
+            let is_inc = self.is_sym("++");
+            let is_dec = self.is_sym("--");
             let op = if let Tok::Sym(s) = self.bump() {
                 s
             } else {
@@ -1505,6 +1701,16 @@ impl Parser {
             }
             if op == "*" {
                 return Ok(self.g.add(Kind::Spread { expr: e }));
+            }
+            // 前缀 ++/-- → 仓颉 `e += 1` / `e -= 1`
+            if is_inc || is_dec {
+                let one = self.g.add(Kind::IntLit("1".into()));
+                let assign_op = if is_inc { "+=" } else { "-=" };
+                return Ok(self.g.add(Kind::Assign {
+                    target: e,
+                    op: assign_op.into(),
+                    value: one,
+                }));
             }
             return Ok(self.g.add(Kind::Unary { op, expr: e }));
         }
@@ -1527,6 +1733,16 @@ impl Parser {
                 let safe = self.is_sym("?.");
                 self.bump();
                 let name = self.expect_ident()?;
+                // 显式泛型实参调用：`obj.method<T>(args)`。
+                // 用试探性解析 + 回退避免将 `obj.x < y` 比较误判为泛型。
+                if self.is_sym("<") {
+                    let saved = self.pos;
+                    if self.try_skip_generic_args() && self.is_sym("(") {
+                        // 泛型实参 + '(' → 确认为泛型调用，保持跳过。
+                    } else {
+                        self.pos = saved; // 回退
+                    }
+                }
                 if self.is_sym("(") {
                     let args = self.parse_args()?;
                     let m = self.g.add(Kind::Member {
@@ -1962,6 +2178,27 @@ impl Parser {
     fn parse_primary(&mut self) -> PResult<NodeId> {
         let line = self.line();
         match self.peek().clone() {
+            // `::ident` 函数/属性引用 → 仓颉映射为函数名引用
+            Tok::Sym(s) if s == "::" => {
+                self.bump();
+                let name = self.expect_ident()?;
+                let decl = self.resolve(&name);
+                Ok(self.g.add(Kind::NameRef {
+                    original: format!("::{}", name),
+                    decl,
+                }))
+            }
+            // Kotlin 反引号转义标识符引用：`is`、`class` 等
+            Tok::Sym(s) if s == "`" => {
+                self.bump(); // `
+                let name = self.expect_ident()?;
+                self.expect_sym("`")?;
+                let decl = self.resolve(&name);
+                Ok(self.g.add(Kind::NameRef {
+                    original: name,
+                    decl,
+                }))
+            }
             Tok::Int(s) => {
                 self.bump();
                 Ok(self.g.add(Kind::IntLit(s)))
@@ -1985,6 +2222,20 @@ impl Parser {
                 }
                 if name == "if" {
                     return self.parse_if();
+                }
+                // `this@Label` / `super@Label` → 仓颉无标签限定 this，直接映射为 this / super
+                if (name == "this" || name == "super")
+                    && self.pos + 1 < self.toks.len()
+                    && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "@")
+                {
+                    self.bump(); // this / super
+                    self.bump(); // @
+                    self.expect_ident()?; // 标签名（丢弃）
+                    let decl = self.resolve(&name);
+                    return Ok(self.g.add(Kind::NameRef {
+                        original: name,
+                        decl,
+                    }));
                 }
                 if name == "when" {
                     return self.parse_when();
@@ -2239,6 +2490,21 @@ impl Parser {
 
     // ---- 辅助 ----
     fn expect_ident(&mut self) -> PResult<String> {
+        // Kotlin 反引号转义标识符：`is`、`class` 等
+        if self.eat_sym("`") {
+            let name = if let Tok::Ident(s) = self.peek().clone() {
+                self.bump();
+                s
+            } else {
+                return Err(format!(
+                    "line {}: 期望反引号内标识符，得到 {:?}",
+                    self.line(),
+                    self.peek()
+                ));
+            };
+            self.expect_sym("`")?;
+            return Ok(name);
+        }
         if let Tok::Ident(s) = self.peek().clone() {
             self.bump();
             Ok(s)
@@ -2264,13 +2530,32 @@ impl Parser {
     }
 
     fn parse_type_raw(&mut self) -> PResult<String> {
+        // 可空函数类型 `((A, B) -> R)?`：外层括号为可空分组。
+        if self.is_sym("(")
+            && self.pos + 1 < self.toks.len()
+            && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "(")
+        {
+            self.bump(); // 跳过外层 '('
+            let inner = self.parse_type_raw()?; // 解析内层函数类型
+            self.expect_sym(")")?; // 关闭外层括号
+            if self.eat_sym("?") {
+                return Ok(format!("({})?", inner));
+            }
+            return Ok(inner);
+        }
         // 函数类型 `(A, B) -> R`（仓颉语法一致，可直接映射）。
         if self.is_sym("(") {
             self.bump();
             let mut params = Vec::new();
             if !self.is_sym(")") {
                 loop {
-                    params.push(self.parse_type_raw()?);
+                    let mut ty = self.parse_type_raw()?;
+                    // Kotlin 函数类型参数可带名字: `(name: Type) -> R`
+                    // 此时 parse_type_raw 解析到的是名字，需跳过名字取实际类型。
+                    if self.eat_sym(":") {
+                        ty = self.parse_type_raw()?;
+                    }
+                    params.push(ty);
                     if !self.eat_sym(",") {
                         break;
                     }
@@ -2295,7 +2580,15 @@ impl Parser {
         if self.eat_sym("<") {
             let mut args = Vec::new();
             loop {
-                args.push(self.parse_type_raw()?);
+                // 跳过 Kotlin 型变标注 `out` / `in`
+                self.eat_kw("out");
+                self.eat_kw("in");
+                // Kotlin star projection `*` → 仓颉 `Any`
+                if self.eat_sym("*") {
+                    args.push("Any".to_string());
+                } else {
+                    args.push(self.parse_type_raw()?);
+                }
                 if !self.eat_sym(",") {
                     break;
                 }

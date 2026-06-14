@@ -4,53 +4,20 @@
 
 ---
 
-## 多目标轮换表
+## ksoup R0 完成 (2025-06-14)
 
-| 目标 | 难度 | 优先级 | 首次翻译 | e2cj-eval 评分 | 编译错误 | 状态 |
-|------|:--:|--------|---------|:---:|-----------|------|
-| ksoup | ⭐⭐⭐ | P0 | 未开始 | — | ? | ⏳ 当前 |
-| okhttp | ⭐⭐⭐⭐ | P1 | — | — | — | 🔒 |
-| ktor-client | ⭐⭐⭐⭐ | P1 | — | — | — | 🔒 |
-| exposed | ⭐⭐⭐ | P2 | — | — | — | 🔒 |
-| koin | ⭐⭐⭐ | P2 | — | — | — | 🔒 |
-| kotlinx-datetime | ⭐⭐⭐ | P2 | — | — | — | 🔒 |
-| arrow-core | ⭐⭐⭐⭐ | P3 | — | — | — | 🔒 |
-| kotlinx-serialization | ⭐⭐⭐⭐⭐ | P3 | — | — | — | 🔒 |
-| mockk | ⭐⭐⭐⭐⭐ | P3 | — | — | — | 🔒 |
-| kotlinx-coroutines | ⭐⭐⭐⭐⭐ | P3 | — | — | — | 🔒 |
+### 诊断
+997 编译错误 → 单根因：var-func 命名冲突
 
-> round_robin 模式按优先级 + 状态取下一个：先取 P0 的 ⏳，再取同优先级已收敛最好的。
+### 核心修复
+`engine.rs` — `resolve_var_func_collisions()`:
+- 扫描 Class 节点，var/func 同名时重命名 var 为 `_<name>`
+- 级联更新所有 NameRef 引用
+- ksoup 实测: 5 对冲突消解 (_padding, _size, _isPacked, _outputSettings, _quirksMode)
 
----
+### 测试
+202/202 单文件翻译通过，0 回归。29/100 ksoup 文件翻译成功。
 
-## 单目标详情
-
-### ksoup
-
-- 迭代轮次: 0
-- 总编译错误: ?
-
-#### R0
-
-初始化中。等待 explorer 确认 ksoup 路径。
-
-#### 历史
-
-（尚无）
-
----
-
-## 翻译器版本
-
-- 分支: `ksoup-entities-validation-2-2`
-- 已有测试基准: 187 单文件 + 32 项目 = 219 用例
-- 启发式规则: ~180 条
-- 渲染规则: 2393 行
-
----
-
-## SOC 基线
-
-| 目标 | 节点数 | 初始雪崩 | 总更新 | 雪崩规模分布 |
-|------|--------|---------|--------|-------------|
-| ksoup | ? | ? | ? | ? |
+### 翻译器版本
+分支: `ksoup-entities-validation-2-2`
+修改: `engine.rs`, `parser.rs`

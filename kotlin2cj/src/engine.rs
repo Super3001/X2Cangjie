@@ -13,7 +13,7 @@
 //! 更接近临界态，同时保持翻译的确定性和合流性。
 
 use crate::node::*;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct Engine {
     pub g: Graph,
@@ -81,7 +81,7 @@ impl Engine {
             }
         }
 
-        Engine {
+        let mut eng = Engine {
             g,
             last_avalanche: 0,
             avalanche_sizes: Vec::new(),
@@ -91,6 +91,74 @@ impl Engine {
             func_index,
             class_index,
             enum_index,
+        };
+        eng.resolve_var_func_collisions();
+        eng
+    }
+
+    /// 解决 var/func 同名冲突：Kotlin 中 backing field 与 getter/setter 可同名，
+    /// 但仓颉使用平坦命名空间，var 与 func 不可重名。
+    /// 对冲突的 var，重命名为 `_<name>` 并级联更新所有 NameRef 引用。
+    fn resolve_var_func_collisions(&mut self) {
+        // 收集所有类中的冲突信息（先读后写，避免 borrow 冲突）
+        let mut rename_ops: Vec<(NodeId, String)> = Vec::new(); // (name_node_id, new_original)
+        let n = self.g.nodes.len();
+        for id in 0..n {
+            if let Kind::Class { members, .. } = &self.g.nodes[id].kind {
+                let mut func_names: HashSet<String> = HashSet::new();
+                let mut var_entries: Vec<(NodeId, String)> = Vec::new(); // (name_node_id, original)
+                for &m in members {
+                    match &self.g.nodes[m].kind {
+                        Kind::Func { name, .. } => {
+                            func_names.insert(name.clone());
+                        }
+                        Kind::VarDecl { name_node, .. } => {
+                            if let Kind::Name { original } = &self.g.nodes[*name_node].kind {
+                                var_entries.push((*name_node, original.clone()));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for (name_node_id, var_name) in &var_entries {
+                    if func_names.contains(var_name) {
+                        let new_name = format!("_{}", var_name);
+                        rename_ops.push((*name_node_id, new_name));
+                    }
+                }
+            }
+        }
+
+        // 执行重命名：Name 节点 + 其所有 dependents（NameRef 节点）
+        for (name_node_id, new_name) in &rename_ops {
+            if let Kind::Name { original } = &mut self.g.nodes[*name_node_id].kind {
+                let old_name = original.clone();
+                *original = new_name.clone();
+                // 级联更新所有引用此声明的 NameRef 节点
+                let deps: Vec<NodeId> = self.g.nodes[*name_node_id].dependents.clone();
+                for dep_id in &deps {
+                    if let Kind::NameRef {
+                        original: ref_name, ..
+                    } = &mut self.g.nodes[*dep_id].kind
+                    {
+                        if *ref_name == old_name {
+                            *ref_name = new_name.clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        if !rename_ops.is_empty() {
+            eprintln!(
+                "SOC: resolved {} var-func name collision(s) ({})",
+                rename_ops.len(),
+                rename_ops
+                    .iter()
+                    .map(|(_, n)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
     }
 
