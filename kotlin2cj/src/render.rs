@@ -112,7 +112,6 @@ impl Engine {
                         None => Some(format!("{}()", ctor)),
                     }
                 } else {
-                    let elem = elem.or_else(|| self.infer_collection_elem_type(&args));
                     if args.len() == 1 {
                         if let Kind::Spread { expr } = self.g.kind(args[0]) {
                             let spread = self.t(*expr)?;
@@ -463,7 +462,9 @@ impl Engine {
         if op == "?:" {
             let ra = self.atom(rhs)?;
             if let Kind::Index { base, index } = self.g.kind(lhs).clone() {
-                return Some(format!("{} ?? {}", self.render_index(base, index)?, ra));
+                let b = self.atom(base)?;
+                let i = self.t(index)?;
+                return Some(format!("{}.get({}) ?? {}", b, i, ra));
             }
             let la = self.atom(lhs)?;
             return Some(format!("{} ?? {}", la, ra));
@@ -2010,12 +2011,6 @@ impl Engine {
         let i = self.t(index)?;
         if self.looks_string(base) {
             return Some(format!("{}.toRuneArray()[{}]", b, i));
-        }
-        if self
-            .expr_type_name(base)
-            .is_some_and(|ty| ty.trim_start_matches('?').starts_with("HashMap"))
-        {
-            return Some(format!("{}.get({})", b, i));
         }
         Some(format!("{}[{}]", b, i))
     }

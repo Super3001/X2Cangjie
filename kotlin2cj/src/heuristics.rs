@@ -40,25 +40,6 @@ impl Engine {
         if depth > 10 {
             return None;
         }
-        if let Kind::CollLit { ctor, elem, args } = self.g.kind(id) {
-            if let Some(e) = elem {
-                return Some(format!("{}<{}>", ctor, e));
-            }
-            if let Some(first) = args.first() {
-                if let Kind::Binary { op, .. } = self.g.kind(*first) {
-                    if op == "to" {
-                        return Some(format!("{}<(String, String)>", ctor));
-                    }
-                }
-                if self.looks_string(*first) {
-                    return Some(format!("{}<String>", ctor));
-                }
-                if self.looks_numeric(*first) {
-                    return Some(format!("{}<Int64>", ctor));
-                }
-            }
-            return Some(ctor.clone());
-        }
         if let Kind::Call { callee, .. } = self.g.kind(id) {
             if let Kind::NameRef { original, .. } = self.g.kind(*callee) {
                 if let Some(&fid) = self.func_index.get(original) {
