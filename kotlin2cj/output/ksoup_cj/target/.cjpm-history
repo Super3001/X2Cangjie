@@ -1,0 +1,38 @@
+{
+  "resolves": [
+    {
+      "rootPackageName": "ksoup_cj",
+      "modulePath": ".",
+      "packagePath": {
+        "commonPaths": [],
+        "platformPaths": [
+          {
+            "_0": "package.src-dir",
+            "_1": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src"
+          }
+        ]
+      },
+      "fullName": "ksoup_cj",
+      "isMacroPackage": false,
+      "output-type": "static",
+      "compile-option": "",
+      "native-compile-option": "",
+      "customized-option": {},
+      "link-option": "",
+      "native-link-option": "",
+      "requires": [],
+      "std-requires": [
+        "std.collection",
+        "std.convert",
+        "std.deriving"
+      ],
+      "c_libs": {},
+      "hasTestFiles": false,
+      "hasProdFiles": true,
+      "hasTestsInProdFiles": false,
+      "accessLevel": "public"
+    }
+  ],
+  "binDeps": {},
+  "crossBinDeps": {}
+}

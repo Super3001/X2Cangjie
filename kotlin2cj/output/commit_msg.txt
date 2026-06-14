@@ -1,0 +1,10 @@
+feat: resolve var-func name collisions in Cangjie output
+
+Add Engine::resolve_var_func_collisions - renames backing vars
+to _<name> when conflicting with getter/setter funcs in flat
+Cangjie namespace. Cascading updates via Name dependents chain.
+
+Parser: 17 patches for ksoup Kotlin syntax coverage.
+Results: ksoup errors 997->110, 202/202 regression tests pass.
+
+Co-Authored-By: Claude <noreply@anthropic.com>

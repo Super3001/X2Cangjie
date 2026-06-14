@@ -1,0 +1,278 @@
+{
+  "bin": {},
+  "pkg-build": {
+    "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src": {
+      "package": "ksoup_cj",
+      "isMacro": false,
+      "accessLevel": "public",
+      "timeStamp": 1781455236,
+      "dependencies": [],
+      "std-dependencies": [
+        {
+          "orPackage": "",
+          "package": "std.collection",
+          "isStd": true,
+          "imports": [
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Attribute.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Attributes.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/CharacterReader.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Cleaner.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/CombiningEvaluator.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Comment.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/CoreExtensions.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/DataNode.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Document.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Entities.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Evaluator.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/FormElement.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/HtmlTreeBuilder.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/IdentityHashMap.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/LeafNode.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Parser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Safelist.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Selector.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StringUtil.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StructuralEvaluator.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/TagSet.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/TreeBuilder.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/URLUtil.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Unbaser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/XmlTreeBuilder.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/attribute.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/attributes.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/character_reader.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/cleaner.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/combining_evaluator.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/comment.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/core_extensions.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/data_node.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/document.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/entities.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/evaluator.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/form_element.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/html_tree_builder.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/identity_hash_map.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/leaf_node.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/parser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/safelist.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/selector.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/stream_parser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/string_util.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/structural_evaluator.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/tag_set.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/tree_builder.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/u_r_l_util.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/unbaser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/xml_tree_builder.cj"
+            }
+          ]
+        },
+        {
+          "orPackage": "",
+          "package": "std.convert",
+          "isStd": true,
+          "imports": [
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Character.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/CodePoint.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Entities.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/QueryParser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/SourceReaderByteArray.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/TokenQueue.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Tokeniser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Unbaser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/character.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/code_point.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/entities.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/query_parser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/source_reader_byte_array.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/token_queue.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/tokeniser.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/unbaser.cj"
+            }
+          ]
+        },
+        {
+          "orPackage": "",
+          "package": "std.deriving",
+          "isStd": true,
+          "imports": [
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Document.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Entities.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/HtmlTreeBuilderState.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Platform.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Token.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/TokeniserState.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/document.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/entities.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/html_tree_builder_state.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/platform.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/token.cj"
+            },
+            {
+              "file": "/home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/tokeniser_state.cj"
+            }
+          ]
+        }
+      ],
+      "testUsed": false,
+      "mockUsed": false
+    }
+  },
+  "pkg-test": {}
+}

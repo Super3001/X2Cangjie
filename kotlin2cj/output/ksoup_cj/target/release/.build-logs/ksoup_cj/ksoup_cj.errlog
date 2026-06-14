@@ -1,0 +1,63 @@
+[31merror[0m: variable in top-level scope must be initialized 
+ [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/identity_hash_map.cj:5:21:
+  [36m| [0m
+[36m5[0m [36m| [0mlet keys: HashSet<K>[0m
+  [36m| [0m[36m~~~~~~~~~~~~~~~~~~~~[31m^ expected '=' here[0m
+  [36m| [0m
+
+[31merror[0m: variable in top-level scope must be initialized 
+ [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/identity_hash_map.cj:6:33:
+  [36m| [0m
+[36m6[0m [36m| [0mlet values: MutableCollection<V>[0m
+  [36m| [0m[36m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[31m^ expected '=' here[0m
+  [36m| [0m
+
+[31merror[0m: variable declaration 'weekRefValue' needs either type or initializer
+ [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/weak_reference.native.cj:7:21:
+  [36m| [0m
+[36m7[0m [36m| [0m    let weekRefValue[0m
+  [36m| [0m    [36m~~~~~~~~~~~~~~~~[31m^ expected ':' or '=' after variable name[0m
+  [36m| [0m
+
+[31merror[0m: variable declaration 'reader' needs either type or initializer
+ [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/token_queue.cj:9:15:
+  [36m| [0m
+[36m9[0m [36m| [0m    let reader[0m
+  [36m| [0m    [36m~~~~~~~~~~[31m^ expected ':' or '=' after variable name[0m
+  [36m| [0m
+
+[31merror[0m: expected a member name after '.' in qualified name, found ':'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/token.cj:13:21:
+   [36m| [0m
+[36m13[0m [36m| [0m        return this.::class.simpleName ?? "Token"[0m
+   [36m| [0m                   [36m~[31m^ expected a member name here[0m
+   [36m| [0m                   [36m|[0m
+   [36m| [0m                   [36mafter '.' in qualified name[0m
+   [36m| [0m
+
+[31merror[0m: variable declaration 'startPending' needs either type or initializer
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/tokeniser.cj:25:21:
+   [36m| [0m
+[36m25[0m [36m| [0m    let startPending[0m
+   [36m| [0m    [36m~~~~~~~~~~~~~~~~[31m^ expected ':' or '=' after variable name[0m
+   [36m| [0m
+
+[31merror[0m: variable declaration 'endPending' needs either type or initializer
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/tokeniser.cj:26:19:
+   [36m| [0m
+[36m26[0m [36m| [0m    let endPending[0m
+   [36m| [0m    [36m~~~~~~~~~~~~~~[31m^ expected ':' or '=' after variable name[0m
+   [36m| [0m
+
+[31merror[0m: expected a member name after '.' in qualified name, found ':'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/selector.cj:28:102:
+   [36m| [0m
+[36m28[0m [36m| [0m            for (_e in collectArrayList(selectStream(evaluator, root).iterator().filter(seenElements.::add))) { (elements.::add)(_e) }[0m
+   [36m| [0m                                                                                                    [36m~[31m^ expected a member name here[0m
+   [36m| [0m                                                                                                    [36m|[0m
+   [36m| [0m                                                                                                    [36mafter '.' in qualified name[0m
+   [36m| [0m
+
+110 errors generated, 8 errors printed.
+10 warnings generated, 0 warning printed.
+Error: failed to compile package `ksoup_cj`, return code is 1

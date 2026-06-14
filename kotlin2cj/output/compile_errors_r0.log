@@ -1,0 +1,141 @@
+[33mwarning[0m: possibly confusing line terminator
+   [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Evaluator.cj:352:48:
+    [36m| [0m
+[36m352[0m [36m| [0m          let parent = element.parent() ?? return[0m
+    [36m| [0m                                           [36m~[0m     [33m^ [0m
+    [36m| [0m [36m_[0m[36m_________________________________________|[0m
+[36m353[0m [36m| [0m[36m|[0m         false[0m
+    [36m| [0m[36m|[0m[36m_[0m[36m________~ possibly confusing line terminator between 'return' and 'false'[0m
+    [36m| [0m
+    [36m#[0m [0mnote[0m: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+[33mwarning[0m: possibly confusing line terminator
+   [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Evaluator.cj:415:48:
+    [36m| [0m
+[36m415[0m [36m| [0m          let parent = element.parent() ?? return[0m
+    [36m| [0m                                           [36m~[0m     [33m^ [0m
+    [36m| [0m [36m_[0m[36m_________________________________________|[0m
+[36m416[0m [36m| [0m[36m|[0m         0[0m
+    [36m| [0m[36m|[0m[36m_[0m[36m________~ possibly confusing line terminator between 'return' and '0'[0m
+    [36m| [0m
+    [36m#[0m [0mnote[0m: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+[33mwarning[0m: possibly confusing line terminator
+   [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Evaluator.cj:440:48:
+    [36m| [0m
+[36m440[0m [36m| [0m          let parent = element.parent() ?? return[0m
+    [36m| [0m                                           [36m~[0m     [33m^ [0m
+    [36m| [0m [36m_[0m[36m_________________________________________|[0m
+[36m441[0m [36m| [0m[36m|[0m         0[0m
+    [36m| [0m[36m|[0m[36m_[0m[36m________~ possibly confusing line terminator between 'return' and '0'[0m
+    [36m| [0m
+    [36m#[0m [0mnote[0m: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+[31merror[0m: redefinition of declaration 'preserveRelativeLinks'
+   [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Safelist.cj:123:22:
+    [36m| [0m
+[36m123[0m [36m| [0m    public open func preserveRelativeLinks(preserve: Bool): Safelist {[0m
+    [36m| [0m                     [31m^^^^^^^^^^^^^^^^^^^^^ [0m
+    [36m| [0m
+[34mnote[0m: 'preserveRelativeLinks' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Safelist.cj:11:9:
+   [36m| [0m
+[36m11[0m [36m| [0m    var preserveRelativeLinks = false[0m
+   [36m| [0m        [34m^^^^^^^^^^^^^^^^^^^^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'document'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj:50:10:
+   [36m| [0m
+[36m50[0m [36m| [0m    func document(): Document {[0m
+   [36m| [0m         [31m^^^^^^^^ [0m
+   [36m| [0m
+[34mnote[0m: 'document' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj:13:9:
+   [36m| [0m
+[36m13[0m [36m| [0m    var document: ?Document = None[0m
+   [36m| [0m        [34m^^^^^^^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'next'
+   [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj:104:26:
+    [36m| [0m
+[36m104[0m [36m| [0m    public override func next(): Element {[0m
+    [36m| [0m                         [31m^^^^ [0m
+    [36m| [0m
+[34mnote[0m: 'next' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj:91:9:
+   [36m| [0m
+[36m91[0m [36m| [0m    var next: ?Element = None[0m
+   [36m| [0m        [34m^^^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'tail'
+   [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj:149:26:
+    [36m| [0m
+[36m149[0m [36m| [0m    public override func tail(node: Node, depth: Int64): Unit {[0m
+    [36m| [0m                         [31m^^^^ [0m
+    [36m| [0m
+[34mnote[0m: 'tail' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StreamParser.cj:92:9:
+   [36m| [0m
+[36m92[0m [36m| [0m    var tail: ?Element = None[0m
+   [36m| [0m        [34m^^^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'wantsNodes'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StructuralEvaluator.cj:11:31:
+   [36m| [0m
+[36m11[0m [36m| [0m    public open override func wantsNodes(): Bool {[0m
+   [36m| [0m                              [31m^^^^^^^^^^ [0m
+   [36m| [0m
+[34mnote[0m: 'wantsNodes' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/StructuralEvaluator.cj:10:9:
+   [36m| [0m
+[36m10[0m [36m| [0m    var wantsNodes: Bool = evaluator.wantsNodes()[0m
+   [36m| [0m        [34m^^^^^^^^^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'it'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/ThreadLocal.cj:12:17:
+   [36m| [0m
+[36m12[0m [36m| [0m            let it = _also_it[0m
+   [36m| [0m                [31m^^ [0m
+   [36m| [0m
+[34mnote[0m: 'it' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/ThreadLocal.cj:10:42:
+   [36m| [0m
+[36m10[0m [36m| [0m        return threadLocalRef.get() ?? { it =>[0m
+   [36m| [0m                                         [34m^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'startPos'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Token.cj:20:22:
+   [36m| [0m
+[36m20[0m [36m| [0m    public open func startPos(): Int64 {[0m
+   [36m| [0m                     [31m^^^^^^^^ [0m
+   [36m| [0m
+[34mnote[0m: 'startPos' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Token.cj:10:9:
+   [36m| [0m
+[36m10[0m [36m| [0m    var startPos = 0[0m
+   [36m| [0m        [34m^^^^^^^^ [0m
+   [36m| [0m
+
+[31merror[0m: redefinition of declaration 'endPos'
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Token.cj:26:22:
+   [36m| [0m
+[36m26[0m [36m| [0m    public open func endPos(): Int64 {[0m
+   [36m| [0m                     [31m^^^^^^ [0m
+   [36m| [0m
+[34mnote[0m: 'endPos' is previously declared here
+  [36m==>[0m /home/songy/SunriseSummer-X2Cangjie/kotlin2cj/output/ksoup_cj/src/Token.cj:11:9:
+   [36m| [0m
+[36m11[0m [36m| [0m    var endPos = Token.UnsetPos()[0m
+   [36m| [0m        [34m^^^^^^ [0m
+   [36m| [0m
+
+997 errors generated, 8 errors printed.
+144 warnings generated, 3 warnings printed.
+Error: failed to compile package `ksoup_cj`, return code is 1
+Error: cjpm build failed

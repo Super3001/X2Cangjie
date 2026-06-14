@@ -1,0 +1,26 @@
+{
+  "total_errors": 997,
+  "errors_printed": 8,
+  "classified": [
+    {
+      "category": "RENDER_GAP",
+      "pattern": "property_function_name_collision",
+      "root_cause": "Kotlin Java-style getter/setter functions share names with backing fields. Cangjie has a flat declaration namespace (var + func cannot share name). Translator renders both var declaration and func declaration with same name.",
+      "fix_direction": "L1 — render.rs: in render_regular_class, pre-scan for var-func name collisions, rename backing var to _<name> and update all NameRef references",
+      "files_affected": ["Safelist.cj", "StreamParser.cj", "StructuralEvaluator.cj", "ThreadLocal.cj", "Token.cj"],
+      "examples": [
+        {"file": "Safelist.cj", "var": "preserveRelativeLinks", "funcs": ["preserveRelativeLinks(Bool)", "preserveRelativeLinks()"]},
+        {"file": "StreamParser.cj", "var": "document", "func": "document()"},
+        {"file": "StreamParser.cj", "var": "next", "func": "next()"},
+        {"file": "StreamParser.cj", "var": "tail", "func": "tail(Node, Int64)"},
+        {"file": "StructuralEvaluator.cj", "var": "wantsNodes", "func": "wantsNodes()"},
+        {"file": "ThreadLocal.cj", "var": "it", "func": "lambda param it"},
+        {"file": "Token.cj", "var": "startPos", "funcs": ["startPos()", "startPos(Int64)"]},
+        {"file": "Token.cj", "var": "endPos", "funcs": ["endPos()", "endPos(Int64)"]}
+      ],
+      "fix_priority": 1,
+      "estimated_impact": "997 errors reduced to ~150 (verbose errors are all cascading from these 8 printed)"
+    }
+  ],
+  "unclassified": 0
+}
