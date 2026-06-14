@@ -13,6 +13,29 @@ k2cj-optimize 的 agent 在执行任务前，应加载以下外部知识源：
 | cangjie-toolchains | `.github/skills/cangjie-toolchains/SKILL.md` | cjpm build/test 命令不确定时 | translator, verifier |
 | cangjie-original-docs | `.github/skills/cangjie-original-docs/SKILL.md` | 深度语言特性查阅时 | diagnostician |
 
+## Java→Cangjie 已验证翻译规则（`~/x2cj-skills/skills/x2cj/rules/`）
+
+| 领域 | 路径 | 何时加载 | 加载者 |
+|------|------|---------|--------|
+| basic/syntax | `rules/docs/basic/syntax.md` (255行) | 类型映射、关键字转义、lambda | fixer, diagnoser |
+| IO | `rules/docs/io/*.md` (18个文件) | Stream/Reader/Writer/序列化映射 | fixer |
+| thread | `rules/docs/thread/*.md` | 线程/ThreadLocal 映射 | fixer |
+| android | `rules/docs/android/*.md` | Android API 映射（目标含 Android 时） | fixer |
+| logging/uuid | `rules/docs/logging/`, `rules/docs/uuid/` | 工具类映射 | fixer |
+
+> 这些规则是 **Java→Cangjie** 的，但对 Kotlin→Cangjie 直接适用——Kotlin 和 Java 共享 JVM 类型系统、集合框架、IO API。fixer 在遇到类型映射不确定时优先查 x2cj rules，它包含了已验证的 `Int→Int64`、`byte→Int8`、`Object→Any` 等映射。
+
+## 差分测试设施（`~/x2cj/skills/x2cj-test/`）
+
+| 资产 | 路径 | 何时加载 | 加载者 |
+|------|------|---------|--------|
+| SKILL.md | `skills/x2cj-test/SKILL.md` | 语义验证阶段 | verifier |
+| output-schema | `skills/x2cj-test/references/output-schema.json` | 语义验证输出格式 | verifier |
+| Java env setup | `skills/x2cj-test/references/env-setup-java.md` | 准备 Java 测试环境 | verifier |
+| Cangjie env setup | `skills/x2cj-test/references/env-setup-cangjie.md` | 准备仓颉测试环境 | verifier |
+
+> x2cj-test 已实现完整的差分测试流水线：Java 跑测试 → 翻译测试 → 仓颉跑测试 → 对比输出。kotlin2cj 的语义验证直接复用这套设施，只需将 `x2cj` 翻译步骤替换为 `kotlin2cj`。
+
 ## 翻译模式知识（本 skill 内）
 
 | 文件 | 路径 | 何时加载 | 加载者 |
