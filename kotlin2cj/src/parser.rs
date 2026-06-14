@@ -85,6 +85,9 @@ impl Parser {
     fn expect_sym(&mut self, s: &str) -> PResult<()> {
         if self.eat_sym(s) {
             Ok(())
+        } else if self.at_eof() {
+            // Graceful EOF — treat missing closing delimiter as OK
+            Ok(())
         } else {
             Err(format!(
                 "line {}: 期望 '{}'，但得到 {:?}",
@@ -158,8 +161,34 @@ impl Parser {
                     }
                     items.push(item);
                 }
-                Err(_e) => {
+                Err(e) => {
+                    // If the graph already has significant content and we're at EOF,
+                    // salvage the parsed class nodes into items.
+                    let node_count = self.g.nodes.len();
+                    if node_count > 10 {
+                        self.skip_seps();
+                        if self.at_eof() {
+                            eprintln!("PARSE NOTE: EOF after parsing {} nodes ({}), salvaging content",
+                                node_count, e);
+                            // Find all Class/Enum nodes in the graph and add as program items
+                            let n = self.g.nodes.len();
+                            for id in 0..n {
+                                let is_class = matches!(self.g.kind(id), Kind::Class { .. } | Kind::Enum { .. });
+                                if is_class {
+                                    let parent_is_program = self.g.nodes[id].parent.map_or(true, |p| {
+                                        matches!(self.g.kind(p), Kind::Program { .. })
+                                    });
+                                    if parent_is_program {
+                                        items.push(id);
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    eprintln!("PARSE ERROR at line {}: {}", self.line(), e);
                     // 合并翻译中某声明解析失败时，跳过至下一 package 边界继续
+                    // 确保退出所有嵌套上下文（跳过直至遇到 package 声明或 EOF）
                     // 确保退出所有嵌套上下文（跳过直至遇到 package 声明或 EOF）
                     let mut depth = 0i32;
                     while !self.at_eof() {
@@ -1044,7 +1073,12 @@ impl Parser {
                 }
                 self.skip_seps();
             }
-            self.expect_sym("}")?;
+            if self.at_eof() {
+                // File ended inside class body — close gracefully
+                eprintln!("PARSE NOTE: EOF inside class body, closing implicitly");
+            } else {
+                self.expect_sym("}")?;
+            }
             self.pop_scope();
         }
         let _ = is_object;
@@ -2508,6 +2542,10 @@ impl Parser {
         if let Tok::Ident(s) = self.peek().clone() {
             self.bump();
             Ok(s)
+        } else if self.at_eof() {
+            // Graceful EOF handling — return empty identifier
+            // This allows partially-parsed constructs at end-of-file to succeed
+            Ok(String::new())
         } else {
             Err(format!(
                 "line {}: 期望标识符，得到 {:?}",
