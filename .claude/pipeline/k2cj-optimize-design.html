@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>kotlin2cj-optimize 设计总览</title>
+<style>
+  body {
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    background: #fffef5;
+    color: #2d2d2d;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+    line-height: 1.7;
+    font-size: 14px;
+  }
+  h1 { font-size: 22px; border-bottom: 2px solid #d4a017; padding-bottom: .4em; margin-top: 0; }
+  h2 { font-size: 18px; color: #8b6914; margin-top: 2em; border-left: 4px solid #d4a017; padding-left: .6em; }
+  h3 { font-size: 15px; color: #5c5c5c; margin-top: 1.8em; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: .8em 0 1.5em;
+    font-size: 13px;
+  }
+  th, td {
+    border: 1px solid #d4c68b;
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f5e6b8;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tr:nth-child(even) td { background: #fdf8e8; }
+  .st-ok    { color: #2a7d2a; font-weight: 600; }
+  .st-no    { color: #c0392b; font-weight: 600; }
+  .st-lock  { color: #888; }
+  pre {
+    background: #f5f0e0;
+    border: 1px solid #d4c68b;
+    border-radius: 4px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    margin: .8em 0 1.2em;
+  }
+  code {
+    background: #f5f0e0;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+  }
+  pre code { background: none; padding: 0; }
+  p { margin: .5em 0; }
+  ul { padding-left: 1.5em; }
+  li { margin: .2em 0; }
+  small { color: #888; }
+  hr { border: none; border-top: 1px dashed #d4c68b; margin: 2em 0; }
+  .note { background: #fef9e7; border-left: 3px solid #d4a017; padding: 0.6em 1em; margin: 1em 0; color: #6b5710; font-size: 13px; }
+  .warn { background: #fef0e0; border-left: 3px solid #d48a17; padding: 0.6em 1em; margin: 1em 0; color: #7b5510; font-size: 13px; }
+  .step { display: inline-block; background: #f5e6b8; border: 1px solid #d4c68b; border-radius: 3px; padding: 2px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; margin-right: 4px; }
+  /* source tag inline */
+  .tag-ksoup  { background:#f5e6b8; color:#8b6914; padding:1px 6px; border-radius:2px; font-size:12px; font-weight:600; }
+  .tag-okhttp { background:#e0f0d8; color:#3b6b27; padding:1px 6px; border-radius:2px; font-size:12px; font-weight:600; }
+  .tag-ktor   { background:#d8e8f0; color:#275b7b; padding:1px 6px; border-radius:2px; font-size:12px; font-weight:600; }
+  .tag-koin   { background:#e8d8f0; color:#5b278b; padding:1px 6px; border-radius:2px; font-size:12px; font-weight:600; }
+  .tag-kotlinx{ background:#f0e0d0; color:#7b4b1b; padding:1px 6px; border-radius:2px; font-size:12px; font-weight:600; }
+  .tag-other  { background:#e8e8e8; color:#555;    padding:1px 6px; border-radius:2px; font-size:12px; font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>kotlin2cj-optimize Skill 设计总览</h1>
+
+<h2>1. 6-Stage Pipeline</h2>
+
+<p>每个目标通过以下 6 阶段流水线自动推进。<b>所有修改在 translator 源码中进行，不修补 .cj 输出文件。</b></p>
+
+<p>Pipeline 内有 <b>优化循环（Optimization Loop）</b>：外层一次性推进 Stage 1→3，内层 Stage 4→5→6 反复迭代直到收敛或卡住。</p>
+
+<table>
+<thead><tr><th>层级</th><th>流程</th><th>说明</th></tr></thead>
+<tbody>
+<tr>
+  <td nowrap><b>外层</b><br><small>（一次性）</small></td>
+  <td nowrap style="text-align:center; font-size:15px">
+    <span class="step">1</span> Explorer
+    &nbsp;→&nbsp;
+    <span class="step">2</span> Translator
+    &nbsp;→&nbsp;
+    <span class="step">3</span> Compiler
+  </td>
+  <td>发现目标 → 翻译 → 首次编译，获得错误基线。只执行一次</td>
+</tr>
+<tr>
+  <td nowrap><b>内层</b><br><small>（迭代循环）</small></td>
+  <td nowrap style="text-align:center; font-size:15px">
+    <span class="step">4</span> Diagnostician
+    &nbsp;→&nbsp;
+    <span class="step">5</span> Fixer
+    &nbsp;→&nbsp;
+    <span class="step">6</span> Verifier
+    &nbsp;↺&nbsp;
+    <span class="step">4</span>
+  </td>
+  <td>诊断 → 修复 translator 源码 → 回归+重编译。<b>有错误则回到 Stage 4</b>，重复直到：
+    <br>· errors = 0 → ✅ 收敛，切下一个目标
+    <br>· 连续 2 轮无改善 → STUCK，切下一个目标
+  </td>
+</tr>
+</tbody>
+</table>
+
+<h3>启动方式</h3>
+
+<table>
+<thead><tr><th>模式</th><th>命令</th><th>适用场景</th></tr></thead>
+<tbody>
+<tr>
+  <td nowrap><b>手动指定目标</b></td>
+  <td nowrap><code>/goal "k2cj-optimize target=ksoup-exception"</code></td>
+  <td>单次调试，聚焦一个目标</td>
+</tr>
+<tr>
+  <td nowrap><b>Round-Robin 轮换</b></td>
+  <td nowrap><code>/goal "k2cj-optimize target=round_robin"</code></td>
+  <td>按 Phase 顺序自动取下一个 🔒 或 ⏳ 目标</td>
+</tr>
+<tr>
+  <td nowrap><b>定时 Cron</b></td>
+  <td nowrap><code>hermes cron create --schedule "0 */4 * * *" --prompt "/goal 'k2cj-optimize target=round_robin'" --workdir /home/songy/SunriseSummer-X2Cangjie</code></td>
+  <td>无人值守，每 4 小时自动推进一轮</td>
+</tr>
+</tbody>
+</table>
+
+<p><b>运行时</b>：Claude Code CLI 在 <code>SunriseSummer-X2Cangjie</code> 仓库中启动，自动加载 <code>.claude/CLAUDE.md</code> → 注入 6 个 agent 角色定义 + 6 个 guard 门禁 + skill 工作流知识。</p>
+
+<div class="warn">
+<b>⚠ 关键规则</b>：<br>
+1. <b>Phase 0 先跑</b> — 任何 translator 修改后、翻译任何目标前，必须先 <code>cargo test</code>（187+33 全部通过），1 分钟确认无回归<br>
+2. <b>只改 translator 源码</b> — 所有修改在 <code>engine.rs</code> / <code>parser.rs</code> / <code>render.rs</code> 中完成<br>
+3. <b>L1 优先</b> — 先尝试单文件小改，失败再升级到 L2/L3 多文件改动<br>
+4. <b>卡住即跳过</b> — 连续 2 轮无错误减少 → STUCK，自动切下一个目标<br>
+5. <b>State 是唯一真相源</b> — 从 <code>.claude/state/optimization-state.md</code> 获取进度，不依赖 context 记忆
+</div>
+
+<h3>6 阶段详解</h3>
+
+<table>
+<thead>
+<tr><th style="width:2em">#</th><th>阶段</th><th>Agent</th><th>职责</th><th>Guard 门禁</th><th>输出</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td style="text-align:center"><span class="step">1</span></td>
+  <td nowrap><b>Explorer</b></td>
+  <td><code>k2cj-explorer</code></td>
+  <td>确认目标代码库路径存在、可编译、.kt 文件数 ≥ 5；返回结构化 JSON 清单</td>
+  <td><code>1-explore-guard.md</code></td>
+  <td>目标路径 + 文件清单</td>
+</tr>
+<tr>
+  <td style="text-align:center"><span class="step">2</span></td>
+  <td nowrap><b>Translator</b></td>
+  <td><code>k2cj-translator</code></td>
+  <td>运行 <code>cargo run --release -- &lt;target&gt;</code> 翻译 Kotlin → <code>.cj</code></td>
+  <td><code>2-translate-guard.md</code></td>
+  <td><code>output/&lt;target&gt;_cj/*.cj</code></td>
+</tr>
+<tr>
+  <td style="text-align:center"><span class="step">3</span></td>
+  <td nowrap><b>Compiler</b></td>
+  <td><code>k2cj-translator</code></td>
+  <td><code>cjc output/&lt;target&gt;_cj/*.cj</code> 编译，收集完整 stderr</td>
+  <td><code>3-compile-guard.md</code></td>
+  <td>错误计数 + <code>compile_errors_r&lt;N&gt;.log</code></td>
+</tr>
+<tr>
+  <td style="text-align:center"><span class="step">4</span></td>
+  <td nowrap><b>Diagnostician</b></td>
+  <td><code>k2cj-diagnostician</code></td>
+  <td>加载外部知识（Kotlin rules → Java rules → cangjie-dev），分类所有错误到 6 大类，输出结构化诊断 JSON</td>
+  <td><code>4-diagnose-guard.md</code></td>
+  <td><code>diagnosis_r&lt;N&gt;.json</code></td>
+</tr>
+<tr>
+  <td style="text-align:center"><span class="step">5</span></td>
+  <td nowrap><b>Fixer</b></td>
+  <td><code>k2cj-fixer</code></td>
+  <td>根据诊断按优先级修改 translator 源码，L1（单文件小改）→ L2（多文件改动）→ L3（架构级重构）</td>
+  <td><code>5-fix-guard.md</code></td>
+  <td>源码 diff + 重翻译产物</td>
+</tr>
+<tr>
+  <td style="text-align:center"><span class="step">6</span></td>
+  <td nowrap><b>Verifier</b></td>
+  <td><code>k2cj-verifier</code></td>
+  <td>Phase 0 全量回归（<code>cargo test</code>）+ 当前目标重编译验证；有错误 → 回到 Stage 4</td>
+  <td><code>6-verify-guard.md</code></td>
+  <td>回归结果 + 编译结果</td>
+</tr>
+</tbody>
+</table>
+
+<h3>错误分类体系</h3>
+
+<p>Diagnostician 将所有编译错误归类到 6 大类（优先级从高到低）：</p>
+
+<table>
+<thead><tr><th>优先级</th><th>类别</th><th>含义</th><th>修复手段</th><th>示例</th></tr></thead>
+<tbody>
+<tr>
+  <td style="text-align:center">1</td>
+  <td><b>RENDER_GAP</b></td>
+  <td>翻译器渲染层缺失——已知语法映射但 render.rs 未实现</td>
+  <td>改 <code>render.rs</code>：为已知映射添加渲染分支</td>
+  <td><code>MutableMap</code> 未渲染为 <code>HashMap</code>（查 <code>hashmap.md</code> 已知映射）</td>
+</tr>
+<tr>
+  <td style="text-align:center">2</td>
+  <td><b>STDLIB_GAP</b></td>
+  <td>Kotlin stdlib API 在仓颉无对应——需在 translator 实现 type mapping</td>
+  <td>改 <code>stdlib_map.rs</code>：新增 Kotlin→Cangjie 类型映射条目（L2）</td>
+  <td><code>ThreadLocal</code> → 无对应，需 <code>stdlib_map.rs</code> 新增映射</td>
+</tr>
+<tr>
+  <td style="text-align:center">3</td>
+  <td><b>HEURISTIC_GAP</b></td>
+  <td>翻译器启发式规则不足——输出语法上正确但语义偏差</td>
+  <td>改 <code>heuristics.rs</code> 或多处联动：调整启发式转换逻辑（L1/L2）</td>
+  <td>默认参数 <code>!</code> 标记未添加</td>
+</tr>
+<tr>
+  <td style="text-align:center">4</td>
+  <td><b>PARSER_GAP</b></td>
+  <td>Parser 不认识某个 Kotlin 语法结构</td>
+  <td>改 <code>parser.rs</code>：添加对该语法结构的识别规则（L1/L2）</td>
+  <td><code>fun interface</code>、<code>..&lt;</code> range-until、<code>expect</code>/<code>actual</code></td>
+</tr>
+<tr>
+  <td style="text-align:center">5</td>
+  <td><b>NODE_GAP</b></td>
+  <td>SOC 引擎问题——节点张力或级联传播异常</td>
+  <td>改 <code>engine.rs</code>：调整节点张力计算或级联收敛逻辑（L2/L3）</td>
+  <td>大文件（>20K 行合并）SOC 引擎收敛为空</td>
+</tr>
+<tr>
+  <td style="text-align:center">6</td>
+  <td><b>UNCLASSIFIED</b></td>
+  <td>无法归类——需 LLM 自由裁量</td>
+  <td>LLM 自由研判后建议修改位置</td>
+  <td>—</td>
+</tr>
+</tbody>
+</table>
+
+<div class="note">
+<b>Diagnostician 知识加载顺序</b>（每轮 inner loop 调用时加载）：<br>
+1. <code>kotlin-cangjie-patterns.md</code>（项目私有，85 行模式快查）→ 2. <b>Kotlin→Cangjie 规则</b>（30 文件，一等知识源）→ 3. <code>fix-history.md</code>（避免重复修复）→ 4. Java→Cangjie 规则（补充 JVM 共享 API）→ 5. <code>cangjie-dev</code> 语言参考 → 6. <code>x2cj-eval</code> 评估标准
+</div>
+
+<h3>Round-Robin 轮换逻辑</h3>
+
+<pre><code>读取 state/optimization-state.md：
+  → 优先取当前 ⏳ (in-progress) 状态的目标
+  → 按 Phase 顺序取下一个 🔒 目标：
+    Phase 0 → 1a → 1b → 1c → 1d → 1e → 1f → 1g → 2a → 2b → 2c → 3a → 3b → 3c → 3d → 4a → 4b → 4c
+
+收敛判定：
+  Phase 0/1: G1 (0 编译错误) → ✅。不需要 x2cj-eval（子包无独立运行标准）
+  Phase 2+:  G1 (0 errors) + G10 (x2cj-eval ≥ 75) → ✅
+
+卡住判定：
+  Inner loop 连续 2 轮无错误数减少 → 标记 STUCK，自动切下一个目标</code></pre>
+
+<hr>
+
+<h2>2. 难度梯度设计</h2>
+
+<p>核心理念：<b>从翻译器自带测试 → 4 个不同项目的小模块 → 中型完整项目 → 大型硬骨头</b>。每级在上一级修复的基础上获得免费收益（规则泛化），避免过拟合到单一项目。</p>
+
+<table>
+<thead><tr><th>Phase</th><th>难度</th><th style="width:5em">#</th><th>目标</th><th>来源</th><th style="width:5em">文件</th><th>核心 Kotlin 特性</th></tr></thead>
+<tbody>
+<tr class="src-other"><td rowspan="1" style="text-align:center; font-weight:600">0</td><td rowspan="1" style="text-align:center">⭐</td>
+  <td style="text-align:center">—</td><td>translator-own-tests</td><td><span class="tag-other">kotlin2cj</span></td><td style="text-align:center">187+33</td><td>回归门禁</td></tr>
+<tr class="src-ksoup"><td rowspan="7" style="text-align:center; font-weight:600">1</td><td rowspan="7" style="text-align:center">⭐</td>
+  <td style="text-align:center">1a</td><td>ksoup-exception</td><td><span class="tag-ksoup">ksoup</span></td><td style="text-align:center">5</td><td>data class / sealed / enum</td></tr>
+<tr class="src-ksoup"><td style="text-align:center">1b</td><td>ksoup-safety+io</td><td><span class="tag-ksoup">ksoup</span></td><td style="text-align:center">5</td><td>companion / extension / lambda</td></tr>
+<tr class="src-okhttp"><td style="text-align:center">1c</td><td>okhttp-mockwebserver</td><td><span class="tag-okhttp">okhttp</span></td><td style="text-align:center">~30</td><td><b>首个非 ksoup</b> — builder / interceptor</td></tr>
+<tr class="src-ksoup"><td style="text-align:center">1d</td><td>ksoup-parser</td><td><span class="tag-ksoup">ksoup</span></td><td style="text-align:center">16</td><td>state machine / when / inline</td></tr>
+<tr class="src-ktor"><td style="text-align:center">1e</td><td>ktor-io</td><td><span class="tag-ktor">ktor</span></td><td style="text-align:center">~20</td><td>ByteChannel / coroutine I/O</td></tr>
+<tr class="src-koin"><td style="text-align:center">1f</td><td>koin-core</td><td><span class="tag-koin">koin</span></td><td style="text-align:center">~25</td><td>DSL / delegate / reified</td></tr>
+<tr class="src-ksoup"><td style="text-align:center">1g</td><td>ksoup-main</td><td><span class="tag-ksoup">ksoup</span></td><td style="text-align:center">87</td><td>Phase 1 收官 — 子包交叉编译</td></tr>
+<tr class="src-kotlinx"><td rowspan="3" style="text-align:center; font-weight:600">2</td><td rowspan="3" style="text-align:center">⭐⭐</td>
+  <td style="text-align:center">2a</td><td>kotlinx-datetime</td><td><span class="tag-kotlinx">kotlinx</span></td><td style="text-align:center">~80</td><td>multiplatform / expect&actual</td></tr>
+<tr class="src-koin"><td style="text-align:center">2b</td><td><span class="tag-koin">koin</span></td><td><span class="tag-koin">koin</span></td><td style="text-align:center">~120</td><td>Phase 1f 升级全量 — scope / fragment</td></tr>
+<tr class="src-other"><td style="text-align:center">2c</td><td><span class="tag-other">exposed</span></td><td><span class="tag-other">exposed</span></td><td style="text-align:center">~150</td><td>type-safe SQL DSL / delegate / infix</td></tr>
+<tr class="src-okhttp"><td rowspan="4" style="text-align:center; font-weight:600">3</td><td rowspan="4" style="text-align:center">⭐⭐⭐</td>
+  <td style="text-align:center">3a</td><td><span class="tag-okhttp">okhttp</span></td><td><span class="tag-okhttp">okhttp</span></td><td style="text-align:center">~300</td><td>Phase 1c 升级全量 — TLS / WebSocket</td></tr>
+<tr class="src-ktor"><td style="text-align:center">3b</td><td>ktor-client</td><td><span class="tag-ktor">ktor</span></td><td style="text-align:center">~200</td><td>Phase 1e 升级全量 — plugin pipeline</td></tr>
+<tr class="src-ksoup"><td style="text-align:center">3c</td><td>ksoup (真全量)</td><td><span class="tag-ksoup">ksoup</span></td><td style="text-align:center">~221</td><td>Phase 1g 升级多平台+多模块</td></tr>
+<tr class="src-other"><td style="text-align:center">3d</td><td>arrow-core</td><td><span class="tag-other">arrow</span></td><td style="text-align:center">~100</td><td>Either / Option / Validated</td></tr>
+<tr class="src-kotlinx"><td rowspan="3" style="text-align:center; font-weight:600">4</td><td rowspan="3" style="text-align:center">⭐⭐⭐⭐⭐</td>
+  <td style="text-align:center">4a</td><td>kotlinx-serialization</td><td><span class="tag-kotlinx">kotlinx</span></td><td style="text-align:center">~150</td><td>annotation processing / KSP</td></tr>
+<tr class="src-other"><td style="text-align:center">4b</td><td><span class="tag-other">mockk</span></td><td><span class="tag-other">mockk</span></td><td style="text-align:center">~100</td><td>inline / reified / reflection</td></tr>
+<tr class="src-kotlinx"><td style="text-align:center">4c</td><td>kotlinx-coroutines</td><td><span class="tag-kotlinx">kotlinx</span></td><td style="text-align:center">~200</td><td>suspend / Flow / Channel</td></tr>
+</tbody>
+</table>
+
+<h3>为什么横跨 4 个项目？</h3>
+
+<table>
+<thead><tr><th>项目</th><th>领域</th><th>Phase 1 入口</th><th>全量目标</th><th>关键 Kotlin 特性</th></tr></thead>
+<tbody>
+<tr><td nowrap><b>ksoup</b></td><td>HTML 解析</td><td>exception(5) → safety+io(5) → parser(16) → main(87)</td><td>Phase 3c (221)</td><td>data class、sealed class、state machine、inline func</td></tr>
+<tr><td nowrap><b>okhttp</b></td><td>网络</td><td>mockwebserver(~30)</td><td>Phase 3a (~300)</td><td>builder pattern、interceptor chain、coroutine</td></tr>
+<tr><td nowrap><b>ktor</b></td><td>异步 I/O</td><td>io(~20)</td><td>Phase 3b (~200)</td><td>ByteChannel、ByteReadPacket、coroutine I/O</td></tr>
+<tr><td nowrap><b>koin</b></td><td>依赖注入</td><td>core(~25)</td><td>Phase 2b (~120)</td><td>DSL、lazy delegate、module/qualifier、reified</td></tr>
+</tbody>
+</table>
+
+<p>不是在一个项目上反复切子包，而是强制翻译器适应<b>四种不同代码风格</b>。</p>
+
+<hr>
+
+<h2>3. 表一：项目选择总表</h2>
+
+<table>
+<thead>
+<tr>
+  <th style="width:3em">#</th>
+  <th>目标</th>
+  <th>来源</th>
+  <th style="width:4em">文件</th>
+  <th>现状</th>
+  <th style="width:4em">/goal<br>次数</th>
+  <th style="width:4em">总时长</th>
+  <th style="width:4em">新增<br>测试</th>
+  <th style="width:4em">新增<br>规则</th>
+  <th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td style="text-align:center">0</td>
+  <td nowrap>translator-own-tests</td>
+  <td nowrap>kotlin2cj</td>
+  <td style="text-align:center">187+33</td>
+  <td class="st-ok">✅ 已收敛</td>
+  <td style="text-align:center">—</td>
+  <td style="text-align:center">—</td>
+  <td style="text-align:center">—</td>
+  <td style="text-align:center">—</td>
+  <td>回归门禁；每次改翻译器后必跑</td>
+</tr>
+<tr>
+  <td style="text-align:center">1a</td>
+  <td nowrap>ksoup-exception</td>
+  <td nowrap>ksoup</td>
+  <td style="text-align:center">5</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>data class/sealed/enum，最轻入口</td>
+</tr>
+<tr>
+  <td style="text-align:center">1b</td>
+  <td nowrap>ksoup-safety+io</td>
+  <td nowrap>ksoup</td>
+  <td style="text-align:center">5</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>companion/extension/lambda</td>
+</tr>
+<tr>
+  <td style="text-align:center">1c</td>
+  <td nowrap>okhttp-mockwebserver</td>
+  <td nowrap>okhttp</td>
+  <td style="text-align:center">~30</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>builder pattern；<b>首个非 ksoup 项目</b></td>
+</tr>
+<tr>
+  <td style="text-align:center">1d</td>
+  <td nowrap>ksoup-parser</td>
+  <td nowrap>ksoup</td>
+  <td style="text-align:center">16</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>state machine/when/inline</td>
+</tr>
+<tr>
+  <td style="text-align:center">1e</td>
+  <td nowrap>ktor-io</td>
+  <td nowrap>ktor</td>
+  <td style="text-align:center">~20</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>ByteChannel/coroutine I/O</td>
+</tr>
+<tr>
+  <td style="text-align:center">1f</td>
+  <td nowrap>koin-core</td>
+  <td nowrap>koin</td>
+  <td style="text-align:center">~25</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>DSL/delegate/reified</td>
+</tr>
+<tr>
+  <td style="text-align:center">1g</td>
+  <td nowrap>ksoup-main</td>
+  <td nowrap>ksoup</td>
+  <td style="text-align:center">87</td>
+  <td class="st-no">❌ 未达成</td>
+  <td style="text-align:center">1</td>
+  <td style="text-align:center">5h</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">4</td>
+  <td><b>未接入 kotlin2cangjie rules</b>；10 turns · 460.7k tokens · 53% (1M)；997→1598+ 反复；结论：需改 translator 本体（stdlib compatibility layer）<br>详见下方 <a href="#attempt-1-detail">#1 执行详情</a></td>
+</tr>
+<tr>
+  <td style="text-align:center">2a</td>
+  <td nowrap>kotlinx-datetime</td>
+  <td nowrap>kotlinx</td>
+  <td style="text-align:center">~80</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>多平台抽象 expect/actual</td>
+</tr>
+<tr>
+  <td style="text-align:center">2b</td>
+  <td nowrap>koin</td>
+  <td nowrap>koin</td>
+  <td style="text-align:center">~120</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>Phase 1f 测过 core(25)，升级全量</td>
+</tr>
+<tr>
+  <td style="text-align:center">2c</td>
+  <td nowrap>exposed</td>
+  <td nowrap>exposed</td>
+  <td style="text-align:center">~150</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>type-safe SQL DSL + delegate + infix</td>
+</tr>
+<tr style="border-top: 2px solid #d4a017">
+  <td style="text-align:center">3a</td>
+  <td nowrap>okhttp</td>
+  <td nowrap>okhttp</td>
+  <td style="text-align:center">~300</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>Phase 1c 测过 mockwebserver(~30)</td>
+</tr>
+<tr>
+  <td style="text-align:center">3b</td>
+  <td nowrap>ktor-client</td>
+  <td nowrap>ktor</td>
+  <td style="text-align:center">~200</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>Phase 1e 测过 ktor-io(~20)</td>
+</tr>
+<tr>
+  <td style="text-align:center">3c</td>
+  <td nowrap>ksoup (真全量)</td>
+  <td nowrap>ksoup</td>
+  <td style="text-align:center">~221</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>Phase 1g 测过 ksoup-main(87)，升级多平台+多模块</td>
+</tr>
+<tr>
+  <td style="text-align:center">3d</td>
+  <td nowrap>arrow-core</td>
+  <td nowrap>arrow</td>
+  <td style="text-align:center">~100</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>Either/Option/Validated 函数式</td>
+</tr>
+<tr style="border-top: 2px solid #d4a017">
+  <td style="text-align:center">4a</td>
+  <td nowrap>kotlinx-serialization</td>
+  <td nowrap>kotlinx</td>
+  <td style="text-align:center">~150</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>annotation processing + KSP</td>
+</tr>
+<tr>
+  <td style="text-align:center">4b</td>
+  <td nowrap>mockk</td>
+  <td nowrap>mockk</td>
+  <td style="text-align:center">~100</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>inline/reified/reflection；L3 架构级</td>
+</tr>
+<tr>
+  <td style="text-align:center">4c</td>
+  <td nowrap>kotlinx-coroutines</td>
+  <td nowrap>kotlinx</td>
+  <td style="text-align:center">~200</td>
+  <td class="st-lock">🔒 待开始</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">0</td>
+  <td>suspend/Flow/Channel；L3 架构级</td>
+</tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>4. 表二：/goal 执行记录</h2>
+
+<table>
+<thead>
+<tr>
+  <th style="width:3em">#</th>
+  <th>目标</th>
+  <th style="width:4em">文件</th>
+  <th>时长和轮数</th>
+  <th>token 消耗情况</th>
+  <th>现状</th>
+  <th style="width:4em">新增<br>测试</th>
+  <th style="width:4em">新增<br>规则</th>
+  <th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr id="attempt-1-detail">
+  <td style="text-align:center">1</td>
+  <td nowrap>ksoup-main</td>
+  <td style="text-align:center">87</td>
+  <td nowrap>5h · 10 turns</td>
+  <td nowrap>460.7k (53% of 1M)</td>
+  <td class="st-no">❌ 未达成</td>
+  <td style="text-align:center">0</td>
+  <td style="text-align:center">4</td>
+  <td><b>未接入 kotlin2cangjie rules</b>；997→1598+，stdlib stub 级联失控<br>详见下方详情</td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="rules-detail">#1 执行详情（ksoup-main，即 attemp-1）</h3>
+
+<p>这是难度梯度重设计之前对 ksoup 全量的首次尝试。当时 Pipeline 尚未定义子包拆分和跨项目轮换，目标是一次性将 ksoup 主模块（87 文件、~22000 行合并源码）翻译到 0 编译错误。</p>
+
+<h4>执行过程</h4>
+
+<table>
+<thead><tr><th>阶段</th><th>动作</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>诊断</td><td>编译 100 个翻译产物 → 997 errors</td><td>根因：var-func 命名冲突（Cangjie 不允许 <code>let field: Type</code> + <code>func field(): Type</code> 同名）</td></tr>
+<tr><td>Engine 修复</td><td>在 <code>engine.rs</code> 添加 <code>resolve_var_func_collisions()</code></td><td>错误 997→110（-887）</td></tr>
+<tr><td>Renderer 修复</td><td>处理 <code>::class</code>/<code>::method</code> 引用 + Unicode surrogate chars</td><td>错误 110→3（-107）</td></tr>
+<tr><td>Parser 修复</td><td>EOF tolerance：parse_class 末尾容错，Element.kt 从 1 字节 → 6670 字节</td><td>消除 1870 级联错误</td></tr>
+<tr><td>后处理</td><td>编写 <code>fix_all.py</code>，30+ 模式自动修补 .cj 文件</td><td>错误反复在 3↔1673 间震荡</td></tr>
+<tr><td>Stub 攻坚战</td><td>编译器驱动自动 stub 生成 + 编译顺序重排 + namespace flattening</td><td>核心错误降至 ~15，但 stdlib stub 缺口导致级联 1598+</td></tr>
+</tbody>
+</table>
+
+<h4>失败根因</h4>
+
+<p>剩余错误全是 Kotlin/Java stdlib 类型在仓颉无对应（<code>MutableMap</code>、<code>MutableList</code>、<code>Entry</code>、<code>Regex</code>、<code>Charset</code> 等）。手工 stub 陷入死循环：</p>
+
+<pre><code>泛型 stub（HashMap&lt;K, V&gt;）  →  override 级联不匹配  →  误差放大
+非泛型 stub                →  API 契约断裂          →  类型错误扩散
+嵌套类型（MutableMap.MutableEntry）→ stub 自身需要更多 stub</code></pre>
+
+<p>本质矛盾：<b>后处理拿到的是已经丢弃了语言语义的纯文本</b>。它不知道 <code>MutableMap</code> 在 Kotlin 里是 interface、有 <code>get</code>/<code>put</code>/<code>remove</code>、实参用了什么泛型——这些信息在翻译器渲染时已经丢失。结论：必须在 translator 里加 <b>stdlib compatibility layer</b>（L2/L3 级改动），在 AST→Cangjie 渲染阶段就把 <code>MutableMap&lt;K,V&gt;</code> → 仓颉 <code>HashMap&lt;K,V&gt;</code> 映射掉，带着完整类型信息走。</p>
+
+<h4>产出：4 项规则（均来自本次 /goal）</h4>
+
+<table>
+<thead><tr><th>规则</th><th>修改位置</th><th>类型</th><th>对应错误类别</th><th>影响</th><th>commit</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>resolve_var_func_collisions()</code></td>
+  <td><code>kotlin2cj/src/engine.rs</code></td>
+  <td>Engine</td>
+  <td><b>NODE_GAP</b></td>
+  <td>消解 887 errors</td>
+  <td><code>93346d9</code></td>
+</tr>
+<tr>
+  <td><code>::</code> operator + surrogate chars</td>
+  <td><code>kotlin2cj/src/render.rs</code></td>
+  <td>Renderer</td>
+  <td><b>RENDER_GAP</b></td>
+  <td>消解 107 errors</td>
+  <td><code>93346d9</code></td>
+</tr>
+<tr>
+  <td>EOF tolerance（parse_class 末尾容错）</td>
+  <td><code>kotlin2cj/src/parser.rs</code></td>
+  <td>Parser</td>
+  <td><b>PARSER_GAP</b></td>
+  <td>Element.kt 1B→6670B，解 1870 级联</td>
+  <td><code>e9a5006</code></td>
+</tr>
+<tr>
+  <td><code>fix_all.py</code> 后处理 pipeline</td>
+  <td><code>scripts/fix_all.py</code></td>
+  <td>Pipeline</td>
+  <td>—</td>
+  <td>30+ 模式自动化（后被证明为错误方向，Phase 1 起不再使用后处理）</td>
+  <td><code>d146eab</code></td>
+</tr>
+</tbody>
+</table>
+
+<h4>对后续 Phase 的影响</h4>
+
+<ul>
+  <li>前 3 项规则（collision resolver / :: operator / EOF tolerance）已成为 translator 基线——Phase 1 所有目标起步就受益</li>
+  <li>第 4 项（fix_all.py）验证了"后处理是错误方向"，Phase 1 起改为<b>只改 translator 源码</b></li>
+  <li>促成了难度梯度重设计：从「全量硬撞」改为按子包拆分 + 跨项目渐进</li>
+  <li>促成了 kotlin2cangjie rules 接入：30 个规则文件为 Diagnostician 提供已验证的类型映射，避免 attemp-1 的 stub 死循环</li>
+</ul>
+
+<hr>
+
+<h2>5. 外部知识源：kotlin2cangjie rules</h2>
+
+<p>来源：<code>~/x2cj-skills</code> 仓库 <code>kotlin2cangjie</code> 分支，<code>skills/x2cj/rules/docs/kotlin/</code> 目录（30 个规则文件）。每条规则有 <code>@kpattern</code> / <code>@kmethod</code> / <code>@kclass</code> 标注 + Kotlin→Cangjie 逐行对照示例。</p>
+
+<table>
+<thead>
+<tr><th>类别</th><th>文件数</th><th>规则文件</th><th>覆盖内容</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td rowspan="4" nowrap>类型映射</td>
+  <td style="text-align:center" rowspan="4">4</td>
+  <td><code>hashmap.md</code></td>
+  <td><code>MutableMap</code>→<code>HashMap</code>、<code>getOrElse</code>→<code>get().getOrDefault()</code></td>
+</tr>
+<tr>
+  <td><code>set.md</code></td>
+  <td><code>MutableSet</code>/<code>HashSet</code>→<code>HashSet</code></td>
+</tr>
+<tr>
+  <td><code>array-arraylist.md</code></td>
+  <td><code>MutableList</code>→<code>ArrayList</code>、<code>Array</code>、<code>ByteArray</code>→<code>Array&lt;Byte&gt;</code></td>
+</tr>
+<tr>
+  <td><code>option.md</code></td>
+  <td><code>T?</code>→<code>?T</code>、<code>null</code>→<code>None</code>、<code>?:</code>→<code>??</code>、<code>!!</code>→<code>.getOrThrow()</code></td>
+</tr>
+<tr>
+  <td rowspan="5" nowrap>语法糖</td>
+  <td style="text-align:center" rowspan="5">5</td>
+  <td><code>class-interface.md</code></td>
+  <td>data class→Equatable、sealed→open+static、nested→top-level、companion→static、by lazy、lateinit</td>
+</tr>
+<tr>
+  <td><code>function.md</code></td>
+  <td><code>fun</code>→<code>func</code>、vararg→Array、默认参数 <code>!</code>、extension→<code>extend</code></td>
+</tr>
+<tr>
+  <td><code>generics.md</code></td>
+  <td><code>&lt;T : C&gt;</code>→<code>where T &lt;: C</code>、out/in→删除、reified→删除</td>
+</tr>
+<tr>
+  <td><code>keyword.md</code></td>
+  <td>60+ 关键词反引号转义、<code>typealias</code>→<code>type</code></td>
+</tr>
+<tr>
+  <td><code>top-level.md</code></td>
+  <td>顶层声明可见性</td>
+</tr>
+<tr>
+  <td rowspan="5" nowrap>表达式</td>
+  <td style="text-align:center" rowspan="5">5</td>
+  <td><code>collection-ops.md</code></td>
+  <td><code>map</code>/<code>filter</code>/<code>fold</code>→pipeline <code>|&gt;</code> + <code>collectXxx</code></td>
+</tr>
+<tr>
+  <td><code>lambda.md</code></td>
+  <td>lambda / SAM</td>
+</tr>
+<tr>
+  <td><code>scope-function.md</code></td>
+  <td><code>let</code>/<code>also</code>/<code>apply</code>/<code>run</code>/<code>with</code></td>
+</tr>
+<tr>
+  <td><code>when.md</code></td>
+  <td><code>when</code>→<code>match</code></td>
+</tr>
+<tr>
+  <td><code>control-flow.md</code></td>
+  <td>控制流</td>
+</tr>
+<tr>
+  <td rowspan="6" nowrap>库映射</td>
+  <td style="text-align:center" rowspan="6">6</td>
+  <td><code>regex.md</code></td>
+  <td><code>Regex</code>（仓颉 <code>std.regex</code> 有对应）</td>
+</tr>
+<tr>
+  <td><code>file.md</code></td>
+  <td>文件 I/O</td>
+</tr>
+<tr>
+  <td><code>logging.md</code></td>
+  <td>日志</td>
+</tr>
+<tr>
+  <td><code>okhttp.md</code></td>
+  <td>OkHttp</td>
+</tr>
+<tr>
+  <td><code>retrofit2.md</code></td>
+  <td>Retrofit</td>
+</tr>
+<tr>
+  <td><code>json-serialize.md</code></td>
+  <td>JSON 序列化</td>
+</tr>
+<tr>
+  <td rowspan="10" nowrap>基础</td>
+  <td style="text-align:center" rowspan="10">10</td>
+  <td><code>basic-syntax.md</code></td>
+  <td>基础语法对照</td>
+</tr>
+<tr>
+  <td><code>string.md</code></td>
+  <td>String 操作</td>
+</tr>
+<tr>
+  <td><code>math.md</code></td>
+  <td>数学运算</td>
+</tr>
+<tr>
+  <td><code>random.md</code></td>
+  <td>随机数</td>
+</tr>
+<tr>
+  <td><code>range.md</code></td>
+  <td>Range</td>
+</tr>
+<tr>
+  <td><code>sort.md</code></td>
+  <td>排序</td>
+</tr>
+<tr>
+  <td><code>thread.md</code></td>
+  <td>线程</td>
+</tr>
+<tr>
+  <td><code>ref-eq.md</code></td>
+  <td><code>===</code> 引用相等</td>
+</tr>
+<tr>
+  <td><code>enum.md</code></td>
+  <td>enum 带状态/无状态</td>
+</tr>
+<tr>
+  <td><code>exception.md</code></td>
+  <td>try/catch/throw</td>
+</tr>
+</tbody>
+</table>
+
+<hr>
+
+<p style="text-align:center; color:#888; margin-top:3em">
+<small>kotlin2cj-optimize · SunriseSummer-X2Cangjie · 2026-06-15</small>
+</p>
+
+</body>
+</html>

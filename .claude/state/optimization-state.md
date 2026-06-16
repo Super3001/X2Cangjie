@@ -27,7 +27,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | # | 目标 | 来源 | 文件数 | 状态 | 编译错误 | 核心特性 |
 |:--:|------|------|:---:|:--:|:-------:|---------|
-| 1a | ksoup-exception | ksoup | 5 | 🔒 | - | data class, sealed, enum |
+| 1a | ksoup-exception | ksoup | 5 | ✅ | 0 | data class, sealed, enum |
 | 1b | ksoup-safety+io | ksoup | 5 | 🔒 | - | companion, extension, lambda |
 | 1c | okhttp-mockwebserver | okhttp | ~30 | 🔒 | - | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | 🔒 | - | state machine, when, inline |
@@ -83,3 +83,15 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - error 从 997 → 23（97.7% 减少），87/87 文件翻译成功
 - 剩余 23 错误：unicode surrogates / ::class 引用 / ::add / let 缺类型 / bare companion / keys()
 - 鉴于难度梯度重新设计，ksoup 拆为子包 + 混合跨项目目标重新开始
+
+### Phase 1 — 1a ksoup-exception (2026-06-16) ✅
+
+- **错误数**: 18 → 0
+- **修复类型**:
+  - **RENDER_GAP**: `map_type("Throwable")` → `Exception` (parser.rs:2748)
+  - **RENDER_GAP**: `super(cause)` 非 String 参数 → `.toString()` 转换 (render.rs:1562-1571)
+  - **RENDER_GAP**: 次级构造函数 `cause` 参数 → 提升为 class 字段 `var cause: ?Exception` (render.rs:1274-1284, 1299-1301, 1568-1570)
+  - **STUB_GAP**: `RuntimeException`, `IllegalArgumentException`, `IOException` 支持 nullable + 多构造函数重载 (_stubs.cj)
+  - **PARSER_GAP**: 无 `()` 的父类被误归为接口 → `is_exception_class` 同时检查 interfaces (render.rs:1263-1266)
+- **回归**: Phase 0 5/5 手动验证通过（WSL 路径限制无法全量跑 `run_tests.py`）
+- **文件**: parser.rs (+1), render.rs (+37)

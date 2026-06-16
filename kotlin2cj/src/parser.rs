@@ -2745,6 +2745,7 @@ pub fn map_type(raw: &str) -> String {
         "String" | "CharSequence" => "String".to_string(),
         "Unit" => "Unit".to_string(),
         "Any" => "Object".to_string(),
+        "Throwable" => "Exception".to_string(),
         "NumberFormatException" => "IllegalArgumentException".to_string(),
         other => other.to_string(),
     }

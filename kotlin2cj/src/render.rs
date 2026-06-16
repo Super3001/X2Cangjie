@@ -1257,6 +1257,41 @@ impl Engine {
         companion_members: &[NodeId],
     ) -> Option<String> {
         let mut body = String::new();
+        // Promote Plain ctor params that need to be accessible from methods
+        // (e.g. `cause` in Exception subclasses, referenced via inherited Throwable.cause).
+        let mut ctor_params_owned: Vec<CtorParam> = ctor_params.to_vec();
+        let is_exception_class = superclass
+            .as_deref()
+            .map(|s| s == "Exception" || s.ends_with("Exception"))
+            .unwrap_or(false)
+            || interfaces.iter().any(|s| s == "Exception" || s.ends_with("Exception"));
+        if is_exception_class {
+            for p in &mut ctor_params_owned {
+                if p.kind == CtorParamKind::Plain && p.name == "cause" {
+                    p.kind = CtorParamKind::Var;
+                }
+            }
+        }
+        // Also promote secondary constructor `cause` params to class fields,
+        // so they are accessible from methods (Kotlin's inherited Throwable.cause).
+        let mut sec_cause_fields: Vec<(String, String)> = Vec::new();
+        if is_exception_class {
+            for m in members {
+                if let Kind::SecondaryConstructor { params, .. } = self.g.kind(*m) {
+                    for p in params {
+                        if let Kind::Param { name_node, ty, .. } = self.g.kind(*p) {
+                            if let Kind::Name { original } = self.g.kind(*name_node) {
+                                let pname = crate::parser::safe_name(original);
+                                if pname == "cause" && !sec_cause_fields.iter().any(|(n, _)| n == &pname) {
+                                    sec_cause_fields.push((pname, ty.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let ctor_params: &[CtorParam] = &ctor_params_owned;
         let moved_member_inits = self.member_inits_referencing_ctor_params(ctor_params, members);
         // 成员字段声明
         for p in ctor_params {
@@ -1269,6 +1304,10 @@ impl Engine {
                 }
                 CtorParamKind::Plain => {}
             }
+        }
+        for (name, _ty) in &sec_cause_fields {
+            // Store cause as Exception type for cross-Exception-subtype compatibility.
+            body.push_str(&format!("{}var {}: ?Exception = None\n", IND, name));
         }
         // 构造器
         let super_call: Option<String> = if super_args.is_empty() {
@@ -1522,8 +1561,25 @@ impl Engine {
         let ps: Vec<String> = params.iter().map(|p| self.t(*p)).collect::<Option<_>>()?;
         let mut out = format!("init({}) {{\n", ps.join(", "));
         if let Some(d) = delegate {
-            let args: Vec<String> = d.args.iter().map(|a| self.t(*a)).collect::<Option<_>>()?;
+            let args: Vec<String> = params.iter().zip(d.args.iter()).map(|(p, a)| {
+                let rendered = self.t(*a).unwrap_or_default();
+                if d.target == "super" && self.is_non_string_exception_arg(*p, &rendered) {
+                    format!("{}.toString()", rendered)
+                } else {
+                    rendered
+                }
+            }).collect();
             out.push_str(&format!("{}{}({})\n", IND, d.target, args.join(", ")));
+            // Store `cause` param as field for later access from methods.
+            for p in params {
+                if let Kind::Param { name_node, .. } = self.g.kind(*p) {
+                    if let Kind::Name { original } = self.g.kind(*name_node) {
+                        if crate::parser::safe_name(original) == "cause" {
+                            out.push_str(&format!("{}{}this.cause = cause\n", IND, IND));
+                        }
+                    }
+                }
+            }
         }
         if let Kind::Block { stmts } = self.g.kind(body) {
             for s in stmts {
@@ -1534,6 +1590,28 @@ impl Engine {
         }
         out.push('}');
         Some(out)
+    }
+
+    /// Check if a super() arg needs .toString() because its param type is neither
+    /// String nor Exception-based (e.g. IOException).
+    fn is_non_string_exception_arg(&self, param: NodeId, rendered: &str) -> bool {
+        if rendered.starts_with('"') {
+            return false;
+        }
+        // Constructor calls like `IOException(message)` always need conversion.
+        if rendered.contains('(') {
+            return true;
+        }
+        // Check the param type: only String and Exception itself don't need conversion.
+        if let Kind::Param { ty, .. } = self.g.kind(param) {
+            if ty == "String" || ty == "?String"
+                || ty == "Exception" || ty == "?Exception" {
+                return false;
+            }
+            // Non-String, non-Exception type (e.g. IOException) → needs conversion.
+            return true;
+        }
+        false
     }
 
     fn non_conflicting_if_let_bind(
