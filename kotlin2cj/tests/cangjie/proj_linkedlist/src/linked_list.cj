@@ -10,7 +10,6 @@ class Node {
         this.next = next
     }
 }
-
 class LinkedList {
     var head: ?Node = None
     var size: Int64 = 0
@@ -65,7 +64,6 @@ class LinkedList {
         head = prev
     }
 }
-
 main() {
     let list = LinkedList()
     list.append(1)

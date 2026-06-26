@@ -230,6 +230,24 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
             continue; // 跳过空文件
         }
 
+        // 注入运行时辅助函数（与 render_program 对齐）
+        let body = if body.contains("__k2cjRuneSlice(") {
+            let helper = r#"func __k2cjRuneSlice(input: String, start: Int64, end: Int64): String {
+    let _r = input.toRuneArray()
+    let _out = Array<Rune>(end - start, { _ => r'\u{0000}' })
+    var _i = 0
+    while (_i < end - start) {
+        _out[_i] = _r[start + _i]
+        _i++
+    }
+    String(_out)
+}
+"#;
+            format!("{}\n{}", helper, body)
+        } else {
+            body
+        };
+
         // 检测需要的 import
         let imports = detect_and_gen_imports(&body);
 

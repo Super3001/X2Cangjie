@@ -1,0 +1,9 @@
+[package]
+  cjc-version = "1.0.5"
+  name = "target_1b"
+  version = "0.1.0"
+  output-type = "executable"
+
+[settings]
+  compileOption = ""
+  main = "main.cj"

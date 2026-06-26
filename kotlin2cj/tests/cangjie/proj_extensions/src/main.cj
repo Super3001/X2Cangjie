@@ -2,69 +2,6 @@ package proj_extensions
 
 import std.collection.*
 
-extend Int64 {
-    func isEven(): Bool {
-        return (this % 2) == 0
-    }
-}
-
-extend Int64 {
-    func isOdd(): Bool {
-        return (this % 2) != 0
-    }
-}
-
-extend Int64 {
-    func factorial(): Int64 {
-        var result = 1
-        var i = 1
-        while (i <= this) {
-            result *= i
-            i += 1
-        }
-        return result
-    }
-}
-
-extend String {
-    func repeat(n: Int64): String {
-        let sb = StringBuilder()
-        var i = 0
-        while (i < n) {
-            sb.append(this)
-            i += 1
-        }
-        return sb.toString()
-    }
-}
-
-extend String {
-    func countChar(target: String): Int64 {
-        var count = 0
-        var i = 0
-        while (i < this.size) {
-            if (this[i..i + 1] == target) {
-                count += 1
-            }
-            i += 1
-        }
-        return count
-    }
-}
-
-extend ArrayList<Int64> {
-    func computeAvg(): Int64 {
-        if (this.size == 0) {
-            return 0
-        }
-        var sum = 0
-        for (n in this) {
-            sum += n
-        }
-        return sum / this.size
-    }
-}
-
 main() {
     println("4 is even: ${4.isEven()}")
     println("7 is even: ${7.isEven()}")

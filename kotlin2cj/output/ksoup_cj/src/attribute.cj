@@ -13,7 +13,7 @@ func __k2cjRuneSlice(input: String, start: Int64, end: Int64): String {
     String(_out)
 }
 
-open class Attribute <: Map.Entry & KCloneable & ToString {
+open class Attribute <: Entry & KCloneable & ToString {
     init(key: String, value: ?String, parent: ?Attributes) {
         var sKey = key
         sKey = sKey.trimAscii({ it => it <= r' ' })

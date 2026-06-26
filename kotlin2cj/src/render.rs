@@ -1001,6 +1001,23 @@ impl Engine {
         generic_params: &[String],
     ) -> Option<String> {
         let ps: Vec<String> = params.iter().map(|p| self.t(*p)).collect::<Option<_>>()?;
+        // Determine open context early — needed to strip defaults from open funcs
+        let in_open_class = self.func_in_open_class(id);
+        // Cangjie: open functions cannot have default parameter values.
+        // Strip " = <default>" suffix from params when the function will be open.
+        let ps: Vec<String> = if in_open_class || (is_override && in_open_class) {
+            ps.into_iter()
+                .map(|p| {
+                    if let Some(eq) = p.find(" = ") {
+                        p[..eq].to_string()
+                    } else {
+                        p
+                    }
+                })
+                .collect()
+        } else {
+            ps
+        };
         let gen_suffix = if generic_params.is_empty() {
             String::new()
         } else {
@@ -1058,7 +1075,6 @@ impl Engine {
             }
         }
         // Determine visibility/open modifiers based on parent class context
-        let in_open_class = self.func_in_open_class(id);
         let vis = if is_override && in_open_class {
             "public open override "
         } else if is_override {
@@ -1359,9 +1375,47 @@ impl Engine {
         if !primary_init_emitted && self.needs_empty_primary_init(members) {
             body.push_str(&format!("{}init() {{}}\n", IND));
         }
+        // 收集类字段名（用于跳过平凡 getter）
+        let field_names: Vec<String> = ctor_params
+            .iter()
+            .filter(|p| p.kind != CtorParamKind::Plain)
+            .map(|p| p.name.clone())
+            .chain(
+                members
+                    .iter()
+                    .filter_map(|m| self.var_decl_name(*m)),
+            )
+            .collect();
+        let is_trivial_getter = |m: NodeId| -> bool {
+            if let Kind::Func {
+                name,
+                params,
+                is_override,
+                ..
+            } = &self.g.nodes[m].kind
+            {
+                // 无参、非 override、名称与字段冲突 → 平凡的 getter，field 已提供访问
+                params.is_empty() && !is_override && field_names.contains(name)
+            } else {
+                false
+            }
+        };
         // 成员方法
         let mut lifted = Vec::new();
         for m in members {
+            // 跳过平凡 getter（field 声明已提供访问）
+            if is_trivial_getter(*m) {
+                continue;
+            }
+            // 扩展函数必须提升到顶层（仓颉不允许在类内声明 extend）
+            if let Kind::Func {
+                receiver_type: Some(_),
+                ..
+            } = &self.g.nodes[*m].kind
+            {
+                lifted.push(self.t(*m)?);
+                continue;
+            }
             if matches!(self.g.kind(*m), Kind::Class { .. } | Kind::Enum { .. }) {
                 lifted.push(self.t(*m)?);
                 continue;
@@ -1377,6 +1431,15 @@ impl Engine {
             let mt = self.t(*m)?;
             let is_companion = companion_members.contains(m);
             if is_companion {
+                // Cangjie 不允许类内 main()——提升到顶层
+                if let Kind::Func { name: func_name, .. } = self.g.kind(*m) {
+                    if crate::parser::safe_name(func_name).trim_matches('`') == "main" {
+                        let cleaned = strip_modifier(&mt, "static");
+                        let cleaned = strip_modifier(&cleaned, "open");
+                        lifted.push(cleaned.trim().to_string());
+                        continue;
+                    }
+                }
                 if let Some(static_func) = self.render_companion_field_func(*m) {
                     body.push_str(&indent(&static_func, 1));
                     body.push('\n');
@@ -1730,7 +1793,17 @@ impl Engine {
             (Some(t), _) => Some(t.clone()),
             (None, Some(i)) => self
                 .expr_type_name(*i)
-                .or_else(|| self.infer_literal_type(*i)),
+                .or_else(|| self.infer_literal_type(*i))
+                .or_else(|| {
+                    // 最后手段：从渲染后的 init 文本提取构造器名作为类型
+                    let rendered = self.t(*i)?;
+                    let ctor_name = rendered.split('(').next()?.split('.').last()?;
+                    if ctor_name.chars().next()?.is_ascii_uppercase() {
+                        Some(ctor_name.to_string())
+                    } else {
+                        None
+                    }
+                }),
             _ => None,
         };
         let ty = inferred.map(|t| format!(": {}", t)).unwrap_or_default();

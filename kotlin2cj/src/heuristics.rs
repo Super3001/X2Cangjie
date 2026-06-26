@@ -47,12 +47,20 @@ impl Engine {
                         return Some(r.clone());
                     }
                 }
+                // 构造函数调用：CalssName(args) → 类型为 CalssName
+                if self.is_class_name(original) {
+                    return Some(original.clone());
+                }
             }
             if let Kind::Member { name, .. } = self.g.kind(*callee) {
                 if let Some(&fid) = self.func_index.get(name) {
                     if let Kind::Func { ret: Some(r), .. } = &self.g.nodes[fid].kind {
                         return Some(r.clone());
                     }
+                }
+                // 构造函数调用 via Member access: Token.StartTag(args) → 返回 StartTag
+                if self.is_class_name(name) {
+                    return Some(name.clone());
                 }
             }
         }

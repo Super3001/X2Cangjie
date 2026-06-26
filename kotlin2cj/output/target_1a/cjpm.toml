@@ -1,0 +1,8 @@
+[package]
+name = "target_1a"
+version = "0.1.0"
+type = "exe"
+
+[settings]
+compileOption = ""
+main = "main.cj"

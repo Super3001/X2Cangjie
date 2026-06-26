@@ -1,0 +1,69 @@
+package target_1b
+
+class SourceReaderByteArray <: SourceReader {
+    init(bytes: Array<Byte>) {
+        this.source = bytes
+    }
+    var source: Array<Byte>
+    var currentPosition: Int64 = 0
+    var markedPosition: ?Int64 = None
+    var isClosed: Bool = false
+    public override func mark(readLimit: Int64) {
+        markedPosition = currentPosition
+    }
+    public override func reset() {
+        isClosed = false
+        if (let Some(it) <- markedPosition) {
+            currentPosition = it
+            markedPosition = None
+        }
+    }
+    public override func readInt(): Int64 {
+        return if (!exhausted()) {
+            currentPosition += 1
+            Int64(source[currentPosition]) & 0xff
+        } else {
+            -1
+        }
+    }
+    public override func readBytes(count: Int64): Array<Byte> {
+        let byteArray = Array<Byte>(count, {i => 0})
+        var i = 0
+        while (!(exhausted()) && (i < count)) {
+            currentPosition += 1
+            byteArray[i] = source[currentPosition]
+            i += 1
+        }
+        return if (i == 0) {
+            Array<Byte>(0, {i => 0})
+        } else if (i != count) {
+            byteArray[0..i]
+        } else {
+            byteArray
+        }
+    }
+    public override func read(bytes: Array<Byte>, offset: Int64, length: Int64): Int64 {
+        var i = offset
+        var pos = currentPosition
+        while (!(exhausted()) && (i < length)) {
+            currentPosition += 1
+            bytes[i] = source[currentPosition]
+            i += 1
+        }
+        let totalRead = currentPosition - pos
+        return if ((totalRead == 0) && exhausted()) {
+            -1
+        } else {
+            totalRead
+        }
+    }
+    public override func readAllBytes(): Array<Byte> {
+        return readBytes(source.size - currentPosition)
+    }
+    public override func exhausted(): Bool {
+        return currentPosition >= source.size
+    }
+    public override func close() {
+        isClosed = true
+    }
+}

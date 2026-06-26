@@ -381,6 +381,15 @@ impl Parser {
 
     /// Skip property accessors: `get()`, `get() = expr`, `get() { ... }`,
     /// `set(value)`, `private set`, `@Ann set`, etc.
+    /// 类体成员声明起始关键字——用于跳过属性 getter 单表达式体时判定边界。
+    const DECL_KEYWORDS: &[&str] = &[
+        "val", "var", "fun", "class", "object", "interface",
+        "companion", "init", "constructor", "enum",
+        "sealed", "data", "abstract", "open",
+        "override", "private", "protected", "internal", "public",
+        "suspend", "inline", "annotation",
+    ];
+
     fn skip_property_accessors(&mut self) {
         self.skip_newlines();
         loop {
@@ -398,13 +407,59 @@ impl Parser {
             }
             self.skip_newlines();
             if self.eat_sym("=") {
-                // 跳过单表达式访问器体，不解析（避免 parse_expr 在合并翻译末尾失败）
-                while !matches!(self.peek(), Tok::Newline | Tok::Eof)
-                    && !self.is_sym("}")
-                    && !self.is_kw("get")
-                    && !self.is_kw("set")
-                {
+                // 跳过单表达式访问器体（不解析，避免 parse_expr 失败）。
+                // 跟踪大括号深度——表达式内的 {} 不应终止跳过。
+                // 多行表达式（get() =\n when { ... }）在行间有换行，
+                // 仅在体外的 } 或下一 get/set 时停止。
+                while matches!(self.peek(), Tok::Newline) {
                     self.bump();
+                }
+                let mut depth = 0i32;
+                loop {
+                    let tok = self.peek().clone();
+                    // 提前检查：换行且 depth=0 时，探测下一非换行 token
+                    // 是否为声明关键字，避免越界吃掉下一成员。
+                    let is_decl_boundary = |t: &Tok| -> bool {
+                        match t {
+                            Tok::Ident(s) => Self::DECL_KEYWORDS.contains(&s.as_str()),
+                            Tok::Sym(s) => s == "}" || s == "{",
+                            Tok::Newline | Tok::Eof => true,
+                            _ => false,
+                        }
+                    };
+                    match tok {
+                        Tok::Newline => {
+                            // 看一眼后面的内容
+                            let save = self.pos;
+                            self.bump(); // 先吞掉当前换行
+                            while matches!(self.peek(), Tok::Newline) {
+                                self.bump();
+                            }
+                            let next = self.peek().clone();
+                            if depth == 0 && is_decl_boundary(&next) {
+                                // 下一 token 看起来是声明/大括号，回退到换行前位置停下
+                                self.pos = save;
+                                break;
+                            }
+                            continue;
+                        }
+                        Tok::Eof => { break; }
+                        Tok::Sym(ref s) if s == "{" => {
+                            depth += 1;
+                            self.bump();
+                            continue;
+                        }
+                        Tok::Sym(ref s) if s == "}" => {
+                            if depth == 0 { break; }
+                            depth -= 1;
+                            self.bump();
+                            continue;
+                        }
+                        Tok::Ident(ref kw)
+                            if depth == 0 && (kw == "get" || kw == "set") =>
+                        { break; }
+                        _ => { self.bump(); continue; }
+                    }
                 }
             } else if self.is_sym("{") {
                 // Block accessor body — skip balanced braces

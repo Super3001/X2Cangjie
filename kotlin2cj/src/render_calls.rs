@@ -254,6 +254,9 @@ impl Engine {
             "addAll" if args.len() == 1 && !self.provably_non_collection(base) => {
                 Some(format!("{}.add(all: {})", b, self.t(args[0])?))
             }
+            "not" if args.is_empty() => {
+                Some(format!("!({})", b))
+            }
             "containsKey" if args.len() == 1 => {
                 Some(format!("{}.contains({})", b, self.t(args[0])?))
             }
@@ -620,6 +623,16 @@ impl Engine {
             "toString" if args.is_empty() => Some(format!("{}.toString()", b)),
             "toString" if args.len() == 1 => {
                 Some(format!("{}.toString(radix: {})", b, self.t(args[0])?))
+            }
+
+            // Kotlin String.equals(other) → Cangjie (lhs == rhs)
+            "equals" if args.len() == 1 => {
+                Some(format!("({} == {})", b, self.t(args[0])?))
+            }
+            // Kotlin String.equals(other, ignoreCase=true) → case-insensitive compare
+            "equals" if args.len() == 2 => {
+                let rhs = self.t(args[0])?;
+                Some(format!("({}.toAsciiLower() == {}.toAsciiLower())", b, rhs))
             }
 
             _ => None,
