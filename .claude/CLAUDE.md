@@ -9,7 +9,7 @@
 
 ## 关键规则
 
-- **Phase 0 先跑** — 任何翻译器修改后、翻译任何目标前，必须先 `cargo test`（187+33 全部通过），1 分钟内确认无回归
+- **Phase 0 先跑** — 任何翻译器修改后、翻译任何目标前，必须先跑全量回归（202 single + 33 project 全部通过）。WSL 环境用 `rustup run stable cargo build --release`，裸 `cargo` 会因路径转换失败
 - **Orchestrator 只调度，不执行代码** — 所有修改由 fixer agent 在 worktree 中完成
 - **每个阶段必经 Gate Agent 验收** — 不通过不进下一阶段
 - **State 是唯一真相源** — 读 `state/optimization-state.md` 获取进度，不依赖 context 记忆
