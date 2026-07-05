@@ -95,7 +95,11 @@ version: 1.0.0
 
 ## 外部知识
 
-本 skill 的知识来源分两部分：**项目私有**（本仓库）+ **外部共用**（x2cj-skills 提供）。
+本 skill 的知识来源分三部分：**项目私有**（本仓库 references/）+ **仓颉语言参考**（本仓库 `.github/skills/`）+ **外部共用**（x2cj-skills 仓库）。
+
+x2cj-skills 路径按 Claude Code 启动环境解析（同一份磁盘内容）：
+- Windows 启动：`C:/Codes/x2cj-skills`
+- WSL 启动：`/mnt/c/Codes/x2cj-skills`
 
 | 类型 | 位置 | 内容 | 谁加载 |
 |------|------|------|--------|
@@ -103,9 +107,13 @@ version: 1.0.0
 | **私有** | `references/fix-history.md` | 历次修复记录 | fixer |
 | **私有** | `references/optimization-goals.md` | 10 项优化目标（G1-G10） | orchestrator |
 | **私有** | `references/G10-semantic-preservation.md` | 语义验证设计 | verifier |
-| **外部** | `~/x2cj-skills/skills/x2cj/rules/` | Java→Cangjie 已验证规则 | fixer, diagnostician |
-| **外部** | `~/x2cj-skills/skills/cangjie-dev/` | 仓颉语言/标准库/规范 | fixer, verifier |
-| **外部** | `~/x2cj-skills/skills/x2cj-eval/` | LLM 语义评估（14 子维度） | verifier |
+| **仓颉参考** | `.github/skills/cangjie-std/` | 仓颉标准库 | diagnostician, fixer, semantic-guard |
+| **仓颉参考** | `.github/skills/cangjie-lang-features/` | 仓颉语法特性 | diagnostician, semantic-guard |
+| **仓颉参考** | `.github/skills/cangjie-stdx|toolchains|original-docs|regulations/` | 扩展库/工具链/官方文档/规范 | 按需 |
+| **外部** | `<x2cj-skills>/skills/x2cj/rules/docs/kotlin/` | Kotlin→Cangjie 规则（31 文件，一级知识源） | diagnostician, fixer |
+| **外部** | `<x2cj-skills>/skills/x2cj/rules/docs/java*/` | Java→Cangjie 已验证规则（补充） | fixer, diagnostician |
+| **外部** | `<x2cj-skills>/skills/cangjie-dev/` | 仓颉开发参考（与 `.github/skills/` 重叠，补充用） | fixer, verifier |
+| **外部** | `<x2cj-skills>/skills/x2cj-eval/` | LLM 语义评估（14 子维度） | verifier |
 | 加载顺序和规则详见 `references/external-knowledge.md`。 | | | |
 
 > 私有知识是项目累积的（每次 fix 追加模式+记录），外部知识是只读参考（从 x2cj-skills 查询）。两者不混放。

@@ -5,13 +5,22 @@
 
 ---
 
-## 一、知识源（x2cj-skills 提供）
+## 〇、x2cj-skills 仓库路径（按启动环境）
 
-所有外部知识来自 `~/x2cj-skills/`，按类别四层：
+| 启动环境 | x2cj-skills 路径 |
+|---------|-----------------|
+| Windows 上启动 Claude Code | `C:/Codes/x2cj-skills` |
+| WSL 上启动 Claude Code | `/mnt/c/Codes/x2cj-skills` |
 
-### Kotlin→Cangjie 翻译规则（kotlin2cangjie 分支）
+> 两者是同一份磁盘内容。历史文档中的 `~/x2cj-skills/` 写法已废弃（该路径在两个环境下均不存在），下文以 `<x2cj-skills>` 指代按环境解析后的实际路径。
 
-> **来源**：`~/x2cj-skills/` 仓库 `kotlin2cangjie` 分支，`skills/x2cj/rules/docs/kotlin/` 目录（30 个规则文件）。
+## 一、知识源（x2cj-skills + 本仓库 .github/skills 提供）
+
+外部知识按类别四层：
+
+### Kotlin→Cangjie 翻译规则（main 分支）
+
+> **来源**：`<x2cj-skills>/skills/x2cj/rules/docs/kotlin/` 目录（31 个规则文件，已从 kotlin2cangjie 分支合入 main）。
 > 每条规则有 `@kpattern`/`@kmethod`/`@kclass` 标注 + Kotlin→Cangjie 逐行对照示例。
 > **这是 kotlin2cj 优化系统的一级知识源**——Kotlin 独有语法糖不在 Java rules 覆盖范围内。
 
@@ -44,6 +53,7 @@
 | | `range.md` | Range |
 | | `sort.md` | 排序 |
 | | `thread.md` | 线程 |
+| | `coroutines.md` | 协程 |
 | | `ref-eq.md` | `===` 引用相等 |
 | | `enum.md` | enum 带状态/无状态 |
 | | `exception.md` | try/catch/throw |
@@ -64,10 +74,18 @@
 
 ### 仓颉语言参考
 
-| 路径 | 内容 |
-|------|------|
-| `skills/cangjie-dev/SKILL.md` | 仓颉开发总入口 |
-| 其下子文档 | 语法特性、标准库、扩展库、工具链 |
+**一级来源：本仓库 `X2Cangjie/.github/skills/`（agent 配置实际引用的路径，无需跨仓库）**
+
+| 路径 | 内容 | 引用者 |
+|------|------|--------|
+| `.github/skills/cangjie-std/` | 仓颉标准库（core/collection/convert/crypto 等） | diagnostician, fixer, semantic-guard |
+| `.github/skills/cangjie-lang-features/` | 仓颉语法特性（判断是否语言层面不可翻译） | diagnostician, semantic-guard |
+| `.github/skills/cangjie-stdx/` | 扩展库（http/json/encoding 等） | 按需 |
+| `.github/skills/cangjie-toolchains/` | 工具链（cjc/cjpm/cjlint 等） | 按需 |
+| `.github/skills/cangjie-original-docs/` | 仓颉官方原始文档 | 按需 |
+| `.github/skills/cangjie-regulations/` | 仓颉编码规范 | 按需 |
+
+**补充来源：`<x2cj-skills>/skills/cangjie-dev/`**（仓颉开发总入口 SKILL.md + docs 子文档，内容与上表有重叠，本地 `.github/skills/` 查不到时再查）
 
 ### 评估标准
 
@@ -87,15 +105,15 @@
 
 ```
 1. kotlin-cangjie-patterns.md        ← 项目私有：已知模式快查（85行，快速索引）
-2. Kotlin→Cangjie 规则（30文件）      ← 一级知识源：Kotlin 独有语法糖 + stdlib 类型映射
+2. Kotlin→Cangjie 规则（31文件）      ← 一级知识源：Kotlin 独有语法糖 + stdlib 类型映射
    2a. 类型映射: hashmap, set, array-arraylist, option
    2b. 语法糖:   class-interface, function, generics, keyword, top-level
    2c. 表达式:   collection-ops, lambda, scope-function, when, control-flow
    2d. 库映射:   regex, file, logging, okhttp, retrofit2, json-serialize
-   2e. 基础:     basic-syntax, string, math, random, range, sort, thread, ref-eq, enum, exception
+   2e. 基础:     basic-syntax, string, math, random, range, sort, thread, coroutines, ref-eq, enum, exception
 3. fix-history.md                    ← 项目私有：历次修复记录（避免重复修复）
 4. Java→Cangjie 规则                 ← 补充：共享 JVM 生态的 API（Java rules 覆盖 Kotlin rules 未覆盖的 java.*/javax.*）
-5. cangjie-dev 语言参考               ← 外部：确认仓颉 API 合法性
+5. 仓颉语言参考                       ← 一级: .github/skills/cangjie-std + cangjie-lang-features；补充: <x2cj-skills> cangjie-dev
 6. x2cj-eval                         ← 外部：语义评估标准（G10 判据）
 ```
 
@@ -165,16 +183,20 @@
 
 ---
 
-## 四、kotlin2cangjie 分支同步
+## 四、x2cj-skills 仓库同步
+
+Kotlin 规则已从 `kotlin2cangjie` 分支合入 `main`，main 分支同时包含 Java 与 Kotlin 规则，**不再需要单独 fetch 分支或建 worktree**：
 
 ```
-x2cj-skills 仓库结构:
-  main 分支      → Java→Cangjie 规则（skills/x2cj/rules/docs/java*/）
-  kotlin2cangjie 分支 → Kotlin→Cangjie 规则（skills/x2cj/rules/docs/kotlin/）
+x2cj-skills 仓库结构（main 分支）:
+  skills/x2cj/rules/docs/java*/   → Java→Cangjie 规则
+  skills/x2cj/rules/docs/kotlin/  → Kotlin→Cangjie 规则（31 文件）
+  skills/cangjie-dev/             → 仓颉开发参考
+  skills/x2cj-eval/               → 语义评估标准
 
-同步命令:
-  cd ~/x2cj-skills && git fetch origin kotlin2cangjie
-  git worktree add /tmp/x2cj-skills-kotlin2cangjie origin/kotlin2cangjie
+同步命令（Windows / WSL 任一环境执行即可，同一份磁盘内容）:
+  git -C C:/Codes/x2cj-skills pull          # Windows
+  git -C /mnt/c/Codes/x2cj-skills pull      # WSL
 ```
 
-Agent 通过 git worktree 或直接读取 `~/.hermes/skills/x2cj/` 下的 symlink 获取 Kotlin 规则。
+> 历史做法（已废弃）：早期 Kotlin 规则只在 `kotlin2cangjie` 分支，需 `git worktree add /tmp/x2cj-skills-kotlin2cangjie origin/kotlin2cangjie` 或读 `~/.hermes/skills/x2cj/` symlink。合入 main 后直接读主 checkout 即可。

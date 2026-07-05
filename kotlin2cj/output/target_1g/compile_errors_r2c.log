@@ -1,0 +1,177 @@
+error[0m: variable declaration 'empty' needs either type or initializer
+  ==> src\nodes_entities.cj:31:14:
+   | 
+31 |     let empty
+   |     ~~~~~~~~~^ expected ':' or '=' after variable name
+   | 
+
+error[0m: variable declaration 'codeDelims' needs either type or initializer
+  ==> src\nodes_entities.cj:34:19:
+   | 
+34 |     let codeDelims
+   |     ~~~~~~~~~~~~~~^ expected ':' or '=' after variable name
+   | 
+
+error[0m: unclosed delimiter: '<'
+  ==> src\nodes_entities.cj:38:51:
+   | 
+38 |     let LocalEncoder: ThreadLocal < CharsetEncoder
+   |                                   ~               ^ expected '>' here
+   |                                   |
+   |                                   to match this opening '<'
+   | 
+
+error[0m: invalid left-hand expression of assignment '='
+  ==> src\nodes_tag_set.cj:41:166:
+   | 
+41 |         ({ => if (tags.contains(tag.namespace())) { tags[tag.namespace()] } else { let _v = ({ => HashMap() })(); tags[tag.namespace()] = _v; _v } })()[tag.tagName] = tag
+   |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ^ 
+   |         |
+   |         cannot assign to this expression
+   | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_attribute.cj:150:73:
+    | 
+150 |           let resultKey: String = getValidKey(key, out.syntax()) ?? return
+    |                                                                     ~     ^ 
+    |  ___________________________________________________________________|
+151 | |         htmlNoValidate(resultKey, value, accum, out)
+    | |_________~ possibly confusing line terminator between 'return' and 'htmlNoValidate'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+   ==> src\select_nodes.cj:171:41:
+    | 
+171 |     public open func replaceAll(operator: (T) -> T) {
+    |                                ~        ^ expected a argument name here
+    |                                |
+    |                                after '(' in parameter list
+    | 
+
+error[0m: expected ';' or '<NL>', found ')'
+   ==> src\select_nodes.cj:171:51:
+    | 
+171 |     public open func replaceAll(operator: (T) -> T) {
+    |                                                   ^ expected ';' or '<NL>' here
+    | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_node.cj:210:112:
+    | 
+210 |           let wrapNode = (if (wrapChildren[0] is Element) { wrapChildren[0] as Element } else { None }) ?? return
+    |                                                                                                            ~     ^ 
+    |  __________________________________________________________________________________________________________|
+211 | |         this
+    | |_________~ possibly confusing line terminator between 'return' and 'this'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_attributes.cj:215:82:
+    | 
+215 |           let ranges: HashMap<String, Range.AttributeRange> = getRanges() ?? return
+    |                                                                              ~     ^ 
+    |  ____________________________________________________________________________|
+216 | |         UntrackedAttr
+    | |_________~ possibly confusing line terminator between 'return' and 'UntrackedAttr'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: unnamed parameters must come before named parameters
+   ==> src\select_elements.cj:222:43:
+    | 
+222 |     func siblings(query!: ?String = None, next: Bool, all: Bool): Elements {
+    |                   ~~~~~~~~~~~~~~~~~~~~~~  ^^^^^^^^^^ unexpected unnamed parameter here
+    |                   |
+    |                   because it must come before this named parameter
+    | 
+
+error[0m: unnamed parameters must come before named parameters
+   ==> src\select_elements.cj:222:55:
+    | 
+222 |     func siblings(query!: ?String = None, next: Bool, all: Bool): Elements {
+    |                   ~~~~~~~~~~~~~~~~~~~~~~              ^^^^^^^^^ unexpected unnamed parameter here
+    |                   |
+    |                   because it must come before this named parameter
+    | 
+
+error[0m: invalid left-hand expression of assignment '='
+   ==> src\nodes_attributes.cj:301:27:
+    | 
+301 |         attributes.keys() = keys.copyOf(_size)
+    |         ~~~~~~~~~~~~~~~~~ ^ 
+    |         |
+    |         cannot assign to this expression
+    | 
+
+error[0m: unknown enum constructor
+   ==> src\nodes_entities.cj:318:32:
+    | 
+318 |       | ascii | utf | fallback | public
+    |  ________________________________^
+319 | |     public func toString(): String {
+    | | ...
+326 | |     }
+    | |_____^ unknown enum constructor
+    | 
+
+error[0m: duplicated modifier: 'public'
+   ==> src\nodes_entities.cj:319:5:
+    | 
+318 |     | ascii | utf | fallback | public
+    |                                ~~~~~~ previous one is here
+319 |     public func toString(): String {
+    |     ^^^^^^ duplicated modifier
+    | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:352:48:
+    | 
+352 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+353 | |         false
+    | |_________~ possibly confusing line terminator between 'return' and 'false'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:415:48:
+    | 
+415 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+416 | |         0
+    | |_________~ possibly confusing line terminator between 'return' and '0'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:440:48:
+    | 
+440 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+441 | |         0
+    | |_________~ possibly confusing line terminator between 'return' and '0'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: expected '{', found 'appendChild'
+   ==> src\nodes_element.cj:628:9:
+    | 
+628 |         appendChild(TextNode(text))
+    |         ^^^^^^^^^^^ expected '{' here
+    | 
+
+error[0m: expected ';' or '<NL>', found '?'
+   ==> src\nodes_element.cj:886:105:
+    | 
+886 |     public static func indexInList<E>(search: Element, elements: ArrayList<E>): Int64 where E <: Element? {
+    |                                                                                                         ^ expected ';' or '<NL>' here
+    | 
+
+13 errors generated, 13 errors printed.
+6 warnings generated, 6 warnings printed.

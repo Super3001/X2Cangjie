@@ -1,0 +1,475 @@
+error[0m: expected a func name after keyword 'func', found '<'
+ ==> src\ported_ksoup_ext.cj:3:13:
+  | 
+3 | public func <T, element>(: ): Unit
+  |        ~~~~ ^ expected a func name here
+  |        |
+  |        after keyword 'func'
+  | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+ ==> src\ported_ksoup_ext.cj:3:26:
+  | 
+3 | public func <T, element>(: ): Unit
+  |                         ~^ expected a argument name here
+  |                         |
+  |                         after '(' in parameter list
+  | 
+
+error[0m: body of function is missing
+ ==> src\ported_ksoup_ext.cj:3:27:
+  | 
+3 | public func <T, element>(: ): Unit
+  |                           ^ missing function body here
+  | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+ ==> src\ported_ksoup_ext.cj:3:28:
+  | 
+3 | public func <T, element>(: ): Unit
+  |                          ~ ^ expected a type name here
+  |                          |
+  |                          after ':' in function declaration
+  | 
+
+error[0m: expected a func name after keyword 'func', found '<'
+  ==> src\nodes_node_utils.cj:14:24:
+   | 
+14 |     static public func <T, type, type>(: ): Unit
+   |                   ~~~~ ^ expected a func name here
+   |                   |
+   |                   after keyword 'func'
+   | 
+
+error[0m: expected a generic type name after ',' in generic, found keyword 'type'
+  ==> src\nodes_node_utils.cj:14:28:
+   | 
+14 |     static public func <T, type, type>(: ): Unit
+   |                          ~ ^^^^ expected a generic type name here
+   |                          |
+   |                          after ',' in generic
+   | 
+help: you could escape keyword as a generic type name using '`':
+   | 
+14 |     static public func <T, `type`, type>(: ): Unit
+   |                            ~~~~~~ 
+   | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+  ==> src\nodes_node_utils.cj:14:40:
+   | 
+14 |     static public func <T, type, type>(: ): Unit
+   |                                       ~^ expected a argument name here
+   |                                       |
+   |                                       after '(' in parameter list
+   | 
+
+error[0m: abstract function must have return type
+  ==> src\nodes_node_utils.cj:14:41:
+   | 
+14 |     static public func <T, type, type>(: ): Unit
+   |                                         ^ abstract function must have return type
+   | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+  ==> src\nodes_node_utils.cj:14:42:
+   | 
+14 |     static public func <T, type, type>(: ): Unit
+   |                                        ~ ^ expected a type name here
+   |                                        |
+   |                                        after ':' in function declaration
+   | 
+
+error[0m: expected a func name after keyword 'func', found '<'
+  ==> src\select_collector.cj:22:24:
+   | 
+22 |     static public func <T, root, type, root, root>(: ): Unit
+   |                   ~~~~ ^ expected a func name here
+   |                   |
+   |                   after keyword 'func'
+   | 
+
+error[0m: expected a generic type name after ',' in generic, found keyword 'type'
+  ==> src\select_collector.cj:22:34:
+   | 
+22 |     static public func <T, root, type, root, root>(: ): Unit
+   |                                ~ ^^^^ expected a generic type name here
+   |                                |
+   |                                after ',' in generic
+   | 
+help: you could escape keyword as a generic type name using '`':
+   | 
+22 |     static public func <T, root, `type`, root, root>(: ): Unit
+   |                                  ~~~~~~ 
+   | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+  ==> src\select_collector.cj:22:52:
+   | 
+22 |     static public func <T, root, type, root, root>(: ): Unit
+   |                                                   ~^ expected a argument name here
+   |                                                   |
+   |                                                   after '(' in parameter list
+   | 
+
+error[0m: abstract function must have return type
+  ==> src\select_collector.cj:22:53:
+   | 
+22 |     static public func <T, root, type, root, root>(: ): Unit
+   |                                                     ^ abstract function must have return type
+   | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+  ==> src\select_collector.cj:22:54:
+   | 
+22 |     static public func <T, root, type, root, root>(: ): Unit
+   |                                                    ~ ^ expected a type name here
+   |                                                    |
+   |                                                    after ':' in function declaration
+   | 
+
+error[0m: expected a func name after keyword 'func', found '<'
+  ==> src\select_nodes.cj:30:24:
+   | 
+30 |     public static func <T, element, element>(: ): Unit
+   |                   ~~~~ ^ expected a func name here
+   |                   |
+   |                   after keyword 'func'
+   | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+  ==> src\select_nodes.cj:30:46:
+   | 
+30 |     public static func <T, element, element>(: ): Unit
+   |                                             ~^ expected a argument name here
+   |                                             |
+   |                                             after '(' in parameter list
+   | 
+
+error[0m: abstract function must have return type
+  ==> src\select_nodes.cj:30:47:
+   | 
+30 |     public static func <T, element, element>(: ): Unit
+   |                                               ^ abstract function must have return type
+   | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+  ==> src\select_nodes.cj:30:48:
+   | 
+30 |     public static func <T, element, element>(: ): Unit
+   |                                              ~ ^ expected a type name here
+   |                                              |
+   |                                              after ':' in function declaration
+   | 
+
+error[0m: variable declaration 'empty' needs either type or initializer
+  ==> src\nodes_entities.cj:31:14:
+   | 
+31 |     let empty
+   |     ~~~~~~~~~^ expected ':' or '=' after variable name
+   | 
+
+error[0m: variable declaration 'codeDelims' needs either type or initializer
+  ==> src\nodes_entities.cj:34:19:
+   | 
+34 |     let codeDelims
+   |     ~~~~~~~~~~~~~~^ expected ':' or '=' after variable name
+   | 
+
+error[0m: unclosed delimiter: '<'
+  ==> src\nodes_entities.cj:38:51:
+   | 
+38 |     let LocalEncoder: ThreadLocal < CharsetEncoder
+   |                                   ~               ^ expected '>' here
+   |                                   |
+   |                                   to match this opening '<'
+   | 
+
+error[0m: invalid left-hand expression of assignment '='
+  ==> src\nodes_tag_set.cj:41:166:
+   | 
+41 |         ({ => if (tags.contains(tag.namespace())) { tags[tag.namespace()] } else { let _v = ({ => HashMap() })(); tags[tag.namespace()] = _v; _v } })()[tag.tagName] = tag
+   |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ^ 
+   |         |
+   |         cannot assign to this expression
+   | 
+
+error[0m: expected a func name after keyword 'func', found '<'
+  ==> src\ported_character.cj:95:13:
+   | 
+95 | public func <T>(: ): Unit
+   |        ~~~~ ^ expected a func name here
+   |        |
+   |        after keyword 'func'
+   | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+  ==> src\ported_character.cj:95:17:
+   | 
+95 | public func <T>(: ): Unit
+   |                ~^ expected a argument name here
+   |                |
+   |                after '(' in parameter list
+   | 
+
+error[0m: body of function is missing
+  ==> src\ported_character.cj:95:18:
+   | 
+95 | public func <T>(: ): Unit
+   |                  ^ missing function body here
+   | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+  ==> src\ported_character.cj:95:19:
+   | 
+95 | public func <T>(: ): Unit
+   |                 ~ ^ expected a type name here
+   |                 |
+   |                 after ':' in function declaration
+   | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_attribute.cj:150:73:
+    | 
+150 |           let resultKey: String = getValidKey(key, out.syntax()) ?? return
+    |                                                                     ~     ^ 
+    |  ___________________________________________________________________|
+151 | |         htmlNoValidate(resultKey, value, accum, out)
+    | |_________~ possibly confusing line terminator between 'return' and 'htmlNoValidate'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: expected a func name after keyword 'func', found '<'
+   ==> src\nodes_element.cj:196:17:
+    | 
+196 |     public func <reified, this, this, this, this, this, this, if, Node, Node>(: ): Unit
+    |            ~~~~ ^ expected a func name here
+    |            |
+    |            after keyword 'func'
+    | 
+
+error[0m: expected a generic type name after ',' in generic, found keyword 'this'
+   ==> src\nodes_element.cj:196:27:
+    | 
+196 |     public func <reified, this, this, this, this, this, this, if, Node, Node>(: ): Unit
+    |                         ~ ^^^^ expected a generic type name here
+    |                         |
+    |                         after ',' in generic
+    | 
+help: you could escape keyword as a generic type name using '`':
+    | 
+196 |     public func <reified, `this`, this, this, this, this, this, if, Node, Node>(: ): Unit
+    |                           ~~~~~~ 
+    | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+   ==> src\nodes_element.cj:196:79:
+    | 
+196 |     public func <reified, this, this, this, this, this, this, if, Node, Node>(: ): Unit
+    |                                                                              ~^ expected a argument name here
+    |                                                                              |
+    |                                                                              after '(' in parameter list
+    | 
+
+error[0m: abstract function must have return type
+   ==> src\nodes_element.cj:196:80:
+    | 
+196 |     public func <reified, this, this, this, this, this, this, if, Node, Node>(: ): Unit
+    |                                                                                ^ abstract function must have return type
+    | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+   ==> src\nodes_element.cj:196:81:
+    | 
+196 |     public func <reified, this, this, this, this, this, this, if, Node, Node>(: ): Unit
+    |                                                                               ~ ^ expected a type name here
+    |                                                                               |
+    |                                                                               after ':' in function declaration
+    | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_node.cj:210:112:
+    | 
+210 |           let wrapNode = (if (wrapChildren[0] is Element) { wrapChildren[0] as Element } else { None }) ?? return
+    |                                                                                                            ~     ^ 
+    |  __________________________________________________________________________________________________________|
+211 | |         this
+    | |_________~ possibly confusing line terminator between 'return' and 'this'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_attributes.cj:215:82:
+    | 
+215 |           let ranges: HashMap<String, Range.AttributeRange> = getRanges() ?? return
+    |                                                                              ~     ^ 
+    |  ____________________________________________________________________________|
+216 | |         UntrackedAttr
+    | |_________~ possibly confusing line terminator between 'return' and 'UntrackedAttr'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: unnamed parameters must come before named parameters
+   ==> src\select_elements.cj:222:43:
+    | 
+222 |     func siblings(query!: ?String = None, next: Bool, all: Bool): Elements {
+    |                   ~~~~~~~~~~~~~~~~~~~~~~  ^^^^^^^^^^ unexpected unnamed parameter here
+    |                   |
+    |                   because it must come before this named parameter
+    | 
+
+error[0m: unnamed parameters must come before named parameters
+   ==> src\select_elements.cj:222:55:
+    | 
+222 |     func siblings(query!: ?String = None, next: Bool, all: Bool): Elements {
+    |                   ~~~~~~~~~~~~~~~~~~~~~~              ^^^^^^^^^ unexpected unnamed parameter here
+    |                   |
+    |                   because it must come before this named parameter
+    | 
+
+error[0m: expected a func name after keyword 'func', found '<'
+   ==> src\select_elements.cj:282:17:
+    | 
+282 |     public func <T>(: ): Unit
+    |            ~~~~ ^ expected a func name here
+    |            |
+    |            after keyword 'func'
+    | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+   ==> src\select_elements.cj:282:21:
+    | 
+282 |     public func <T>(: ): Unit
+    |                    ~^ expected a argument name here
+    |                    |
+    |                    after '(' in parameter list
+    | 
+
+error[0m: abstract function must have return type
+   ==> src\select_elements.cj:282:22:
+    | 
+282 |     public func <T>(: ): Unit
+    |                      ^ abstract function must have return type
+    | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+   ==> src\select_elements.cj:282:23:
+    | 
+282 |     public func <T>(: ): Unit
+    |                     ~ ^ expected a type name here
+    |                     |
+    |                     after ':' in function declaration
+    | 
+
+error[0m: invalid left-hand expression of assignment '='
+   ==> src\nodes_attributes.cj:301:27:
+    | 
+301 |         attributes.keys() = keys.copyOf(_size)
+    |         ~~~~~~~~~~~~~~~~~ ^ 
+    |         |
+    |         cannot assign to this expression
+    | 
+
+error[0m: unknown enum constructor
+   ==> src\nodes_entities.cj:318:32:
+    | 
+318 |       | ascii | utf | fallback | public
+    |  ________________________________^
+319 | |     public func toString(): String {
+    | | ...
+326 | |     }
+    | |_____^ unknown enum constructor
+    | 
+
+error[0m: duplicated modifier: 'public'
+   ==> src\nodes_entities.cj:319:5:
+    | 
+318 |     | ascii | utf | fallback | public
+    |                                ~~~~~~ previous one is here
+319 |     public func toString(): String {
+    |     ^^^^^^ duplicated modifier
+    | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:352:48:
+    | 
+352 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+353 | |         false
+    | |_________~ possibly confusing line terminator between 'return' and 'false'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:415:48:
+    | 
+415 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+416 | |         0
+    | |_________~ possibly confusing line terminator between 'return' and '0'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: expected a func name after keyword 'func', found '<'
+   ==> src\nodes_node.cj:439:17:
+    | 
+439 |     public func <T, type, accum, out, out, true>(: ): Unit
+    |            ~~~~ ^ expected a func name here
+    |            |
+    |            after keyword 'func'
+    | 
+
+error[0m: expected a generic type name after ',' in generic, found keyword 'type'
+   ==> src\nodes_node.cj:439:21:
+    | 
+439 |     public func <T, type, accum, out, out, true>(: ): Unit
+    |                   ~ ^^^^ expected a generic type name here
+    |                   |
+    |                   after ',' in generic
+    | 
+help: you could escape keyword as a generic type name using '`':
+    | 
+439 |     public func <T, `type`, accum, out, out, true>(: ): Unit
+    |                     ~~~~~~ 
+    | 
+
+error[0m: expected a argument name after '(' in parameter list, found ':'
+   ==> src\nodes_node.cj:439:50:
+    | 
+439 |     public func <T, type, accum, out, out, true>(: ): Unit
+    |                                                 ~^ expected a argument name here
+    |                                                 |
+    |                                                 after '(' in parameter list
+    | 
+
+error[0m: abstract function must have return type
+   ==> src\nodes_node.cj:439:51:
+    | 
+439 |     public func <T, type, accum, out, out, true>(: ): Unit
+    |                                                   ^ abstract function must have return type
+    | 
+
+error[0m: expected a type name after ':' in function declaration, found ')'
+   ==> src\nodes_node.cj:439:52:
+    | 
+439 |     public func <T, type, accum, out, out, true>(: ): Unit
+    |                                                  ~ ^ expected a type name here
+    |                                                  |
+    |                                                  after ':' in function declaration
+    | 
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:440:48:
+    | 
+440 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+441 | |         0
+    | |_________~ possibly confusing line terminator between 'return' and '0'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+45 errors generated, 45 errors printed.
+6 warnings generated, 6 warnings printed.

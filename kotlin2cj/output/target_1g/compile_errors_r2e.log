@@ -1,0 +1,75 @@
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_attribute.cj:150:73:
+    | 
+150 |           let resultKey: String = getValidKey(key, out.syntax()) ?? return
+    |                                                                     ~     ^ 
+    |  ___________________________________________________________________|
+151 | |         htmlNoValidate(resultKey, value, accum, out)
+    | |_________~ possibly confusing line terminator between 'return' and 'htmlNoValidate'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_node.cj:210:112:
+    | 
+210 |           let wrapNode = (if (wrapChildren[0] is Element) { wrapChildren[0] as Element } else { None }) ?? return
+    |                                                                                                            ~     ^ 
+    |  __________________________________________________________________________________________________________|
+211 | |         this
+    | |_________~ possibly confusing line terminator between 'return' and 'this'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\nodes_attributes.cj:215:82:
+    | 
+215 |           let ranges: HashMap<String, Range.AttributeRange> = getRanges() ?? return
+    |                                                                              ~     ^ 
+    |  ____________________________________________________________________________|
+216 | |         UntrackedAttr
+    | |_________~ possibly confusing line terminator between 'return' and 'UntrackedAttr'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:352:48:
+    | 
+352 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+353 | |         false
+    | |_________~ possibly confusing line terminator between 'return' and 'false'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:415:48:
+    | 
+415 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+416 | |         0
+    | |_________~ possibly confusing line terminator between 'return' and '0'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+warning[0m: possibly confusing line terminator
+   ==> src\select_evaluator.cj:440:48:
+    | 
+440 |           let parent = element.parent() ?? return
+    |                                            ~     ^ 
+    |  __________________________________________|
+441 | |         0
+    | |_________~ possibly confusing line terminator between 'return' and '0'
+    | 
+    # note: this warning can be suppressed by setting the compiler option `-Woff parser`
+
+error[0m: expected ';' or '<NL>', found '?'
+   ==> src\nodes_element.cj:886:105:
+    | 
+886 |     public static func indexInList<E>(search: Element, elements: ArrayList<E>): Int64 where E <: Element? {
+    |                                                                                                         ^ expected ';' or '<NL>' here
+    | 
+
+1 error generated, 1 error printed.
+6 warnings generated, 6 warnings printed.

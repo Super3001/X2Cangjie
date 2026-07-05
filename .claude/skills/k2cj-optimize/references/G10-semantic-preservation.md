@@ -29,7 +29,7 @@
 | **LLM 代码质量评估**（3 子维度） | 15 | LLM 评估惯用法/异常/类型适配 |
 | **总分** | **100**（跳过测试时归一化） | |
 
-> 单元测试 (`cjpm test`) 可选：有就用（+20 分权重），没有就跳过，总分按编译+LLM三项归一化到 100。公式见 `~/x2cj-skills/skills/x2cj-eval/skill.md`。
+> 单元测试 (`cjpm test`) 可选：有就用（+20 分权重），没有就跳过，总分按编译+LLM三项归一化到 100。公式见 `<x2cj-skills>/skills/x2cj-eval/skill.md`（路径解析见 [external-knowledge.md](external-knowledge.md)：Windows `C:/Codes/x2cj-skills`，WSL `/mnt/c/Codes/x2cj-skills`）。
 
 ## 为什么适合 kotlin2cj 的 loop
 
@@ -73,7 +73,7 @@ SKIP:  无 .cj 文件对可评估 → 标记 WARNING，不阻塞
 ## 外部知识依赖
 
 x2cj-eval 已在 x2cj-skills 中完整实现：
-- `~/x2cj-skills/skills/x2cj-eval/skill.md` — 完整评估流程（1115 行）
+- `<x2cj-skills>/skills/x2cj-eval/skill.md` — 完整评估流程（1115 行）
 - 输出格式：`reports/x2cj-eval/results.json` + `results.html`
 - 5 个子维度的 LLM prompt 模板已内嵌
 
