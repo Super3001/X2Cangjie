@@ -50,6 +50,8 @@ pub enum Kind {
         is_open: bool,
         /// 是否为 `data class`（生成 ToString 以对齐 Kotlin 自动 toString）。
         is_data: bool,
+        /// 是否为 `value class` / `@JvmInline`（值语义 → 仓颉 struct + @Derive[Equatable]）。
+        is_value: bool,
         /// 是否为 `interface`。
         is_interface: bool,
         /// 是否为 `abstract class`（抽象方法须 `public func`）。

@@ -10,10 +10,10 @@
 ## 关键规则
 
 - **Phase 0 先跑** — 任何翻译器修改后、翻译任何目标前，必须先跑全量回归（202 single + 33 project 全部通过）。WSL 环境用 `rustup run stable cargo build --release`，裸 `cargo` 会因路径转换失败
-- **Orchestrator 只调度，不执行代码** — 所有修改由 fixer agent 在 worktree 中完成
+- **Orchestrator 只调度，不执行代码** — 所有修改由 fixer agent 完成
 - **每个阶段必经 Gate Agent 验收** — 不通过不进下一阶段
 - **State 是唯一真相源** — 读 `state/optimization-state.md` 获取进度，不依赖 context 记忆
-- **回归即回退** — 任何已有测试失败 → 丢弃 worktree，重试
+- **回归即回退** — 任何已有测试失败 →必须 回退到能使已有测试全部通过的状态
 - **L1 优先** — 先尝试单文件小改，失败了再升级到 L2/L3 多文件改动
 - **难度梯度** — Stage 0 (⭐ baseline) → 1a exception(5) → 1b safety+io(5) → 1c parser(16) → ... 小步快跑，不在一个目标上过度投资
 
@@ -25,7 +25,7 @@
 | k2cj-explorer | `agents/k2cj-explorer.md` | 发现测试目标 |
 | k2cj-translator | `agents/k2cj-translator.md` | 执行 Kotlin→Cangjie 翻译 |
 | k2cj-diagnostician | `agents/k2cj-diagnostician.md` | 分类编译错误 |
-| k2cj-fixer | `agents/k2cj-fixer.md` | 在 worktree 中修改翻译器 |
+| k2cj-fixer | `agents/k2cj-fixer.md` | 修改翻译器 |
 | k2cj-verifier | `agents/k2cj-verifier.md` | 全量回归测试 |
 
 ## 目录结构
@@ -44,5 +44,5 @@
 本系统融合三种多 agent 架构：
 
 - **架构 B**（SKILL.md + agent 配置驱动）：skills/ + agents/ + guards/ 的声明式文件系统
-- **架构 C**（Loop Engineering）：`/goal` 自动循环 + worktree 隔离 + state 持久化 + 制造/检查分离
+- **架构 C**（Loop Engineering）：`/goal` 自动循环 + state 持久化 + 制造/检查分离
 - **SOC 理论**：张力=编译错误数，级联=依赖重编译，慢驱动=逐错误 L1 优先修复，收敛=0 errors

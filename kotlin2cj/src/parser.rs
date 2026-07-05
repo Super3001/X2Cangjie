@@ -324,10 +324,19 @@ impl Parser {
         ];
         let mut seen = Vec::new();
         loop {
+            // Interleave annotation-skipping so modifiers that follow annotations
+            // (e.g. `@JvmInline public value class`) are still captured rather than
+            // dropped — previously they leaked past into the unrecognized-token skip.
+            self.skip_annotations();
             let mut matched = false;
             if let Tok::Ident(x) = self.peek() {
-                if MODS.contains(&x.as_str()) && x != "data" && x != "const" {
-                    seen.push(x.clone());
+                let x = x.clone();
+                // `value` is a Kotlin soft keyword: a modifier only in `value class`.
+                // Captured so the renderer can emit a `struct` (value semantics).
+                // It must NOT be eaten as a bare identifier (`var value: Int`, `value += 1`).
+                let is_value_mod = x == "value" && self.peek_next_is_kw("class");
+                if (MODS.contains(&x.as_str()) && x != "data" && x != "const") || is_value_mod {
+                    seen.push(x);
                     self.bump();
                     matched = true;
                 }
@@ -336,7 +345,6 @@ impl Parser {
                 break;
             }
         }
-        self.skip_annotations();
         seen
     }
 
@@ -673,9 +681,18 @@ impl Parser {
         let mut is_abstract = false;
         if self.eat_sym("=") {
             self.skip_newlines();
-            let e = self.parse_expr()?;
-            let r = self.g.add(Kind::Return { value: Some(e) });
-            body = self.g.add(Kind::Block { stmts: vec![r] });
+            // Expression body `= throw X(...)` (e.g. `fun f(): Nothing = throw IAE(...)`):
+            // render as a bare `throw`, not `return throw` (parse_expr doesn't consume `throw`).
+            if self.is_kw("throw") {
+                self.bump();
+                let e = self.parse_expr()?;
+                let throw_node = self.g.add(Kind::Throw { value: e });
+                body = self.g.add(Kind::Block { stmts: vec![throw_node] });
+            } else {
+                let e = self.parse_expr()?;
+                let r = self.g.add(Kind::Return { value: Some(e) });
+                body = self.g.add(Kind::Block { stmts: vec![r] });
+            }
         } else if self.is_sym("{") {
             body = self.parse_block()?;
         } else {
@@ -1142,6 +1159,7 @@ impl Parser {
         let is_open = mods
             .iter()
             .any(|m| m == "open" || m == "abstract" || m == "sealed");
+        let is_value = mods.iter().any(|m| m == "value");
         Ok(self.g.add(Kind::Class {
             name: safe_name(&name),
             ctor_params,
@@ -1149,6 +1167,7 @@ impl Parser {
             superclass,
             is_open,
             is_data,
+            is_value,
             is_interface,
             is_abstract,
             interfaces,

@@ -53,6 +53,11 @@ impl Engine {
             Kind::Raw(s) => Some(s),
             Kind::Name { original } => Some(crate::parser::safe_name(&original)),
             Kind::NameRef { original, decl } => {
+                // Kotlin `Unit` value-expression → Cangjie unit value `()`
+                // (the `Unit` *type* goes through map_type, not NameRef)
+                if original == "Unit" {
+                    return Some("()".to_string());
+                }
                 // Kotlin :: prefix — strip for Cangjie (::isIdent → isIdent)
                 let safe_original = if original.starts_with("::") {
                     crate::parser::safe_name(&original[2..])
@@ -373,6 +378,7 @@ impl Engine {
                 superclass,
                 is_open,
                 is_data,
+                is_value,
                 is_interface,
                 is_abstract,
                 interfaces,
@@ -388,6 +394,7 @@ impl Engine {
                 superclass,
                 is_open,
                 is_data,
+                is_value,
                 is_interface,
                 is_abstract,
                 &interfaces,
@@ -1098,6 +1105,7 @@ impl Engine {
         superclass: Option<String>,
         is_open: bool,
         is_data: bool,
+        is_value: bool,
         is_interface: bool,
         is_abstract: bool,
         interfaces: &[String],
@@ -1126,6 +1134,7 @@ impl Engine {
                 superclass,
                 is_open,
                 is_data,
+                is_value,
                 is_abstract,
                 interfaces,
                 super_args,
@@ -1266,6 +1275,7 @@ impl Engine {
         superclass: Option<String>,
         is_open: bool,
         is_data: bool,
+        is_value: bool,
         is_abstract: bool,
         interfaces: &[String],
         super_args: &[NodeId],
@@ -1480,8 +1490,12 @@ impl Engine {
                 IND
             ));
         }
-        // 类关键字与继承
-        let kw = if is_abstract {
+        // 类关键字与继承。value class → 仓颉 struct（值语义），@Derive[Equatable]
+        // 自动派生结构相等（== / !=）。注意：派生的 == 在类型自身方法体内不可见，
+        // 故 value class 内部的 `when(this)` 比较走字段（见 render_when）。
+        let kw = if is_value {
+            "struct"
+        } else if is_abstract {
             "abstract class"
         } else if is_open {
             "open class"
@@ -1501,15 +1515,17 @@ impl Engine {
                 ifaces.push("ToString".to_string());
             }
         }
+        // 不显式声明 `<: Equatable<T>`——@Derive 已注入该 conformance，重复声明会冲突。
         let sup = if ifaces.is_empty() {
             String::new()
         } else {
             format!(" <: {}", ifaces.join(" & "))
         };
+        let derive_attr = if is_value { "@Derive[Equatable]\n" } else { "" };
         let class_text = if body.is_empty() {
-            format!("{} {}{} {{}}", kw, name_gen, sup)
+            format!("{}{} {}{} {{}}", derive_attr, kw, name_gen, sup)
         } else {
-            format!("{} {}{} {{\n{}}}", kw, name_gen, sup, body)
+            format!("{}{} {}{} {{\n{}}}", derive_attr, kw, name_gen, sup, body)
         };
         if lifted.is_empty() {
             Some(class_text)
@@ -2000,6 +2016,77 @@ impl Engine {
 
     // ============ when 渲染 ============
 
+    /// The single value field of a `value class` (→ struct), if `ty` names one.
+    fn value_class_field(&self, ty: &str) -> Option<String> {
+        let &cid = self.class_index.get(ty)?;
+        if let Kind::Class {
+            is_value: true,
+            ctor_params,
+            ..
+        } = &self.g.nodes[cid].kind
+        {
+            return ctor_params
+                .iter()
+                .find(|p| p.kind != CtorParamKind::Plain)
+                .map(|p| p.name.clone());
+        }
+        None
+    }
+
+    /// If any `when` arm matches against a value class's companion constant
+    /// (renders as `Type.NAME(...)`), return that value class's field name.
+    fn value_class_const_field(&self, arms: &[WhenArm]) -> Option<String> {
+        for a in arms {
+            if let Some(ps) = &a.patterns {
+                for p in ps {
+                    if let Some(s) = self.t(*p) {
+                        if let Some(dot) = s.find('.') {
+                            if let Some(field) = self.value_class_field(&s[..dot]) {
+                                return Some(field);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Render a value-class `when` as an if/else chain comparing the value field
+    /// (`(this).mode == (Type.CR()).mode`), since the derived `==` is unavailable
+    /// in-body. Caller guarantees an `else` arm exists.
+    fn render_when_value_class_consts(
+        &self,
+        subj: NodeId,
+        arms: &[WhenArm],
+        field: &str,
+    ) -> Option<String> {
+        let s = self.t(subj)?;
+        let mut out = String::new();
+        let mut first = true;
+        let mut else_body: Option<String> = None;
+        for a in arms {
+            match &a.patterns {
+                Some(ps) => {
+                    let conds: Vec<String> = ps
+                        .iter()
+                        .map(|p| {
+                            self.t(*p)
+                                .map(|pat| format!("({}).{} == ({}).{}", s, field, pat, field))
+                        })
+                        .collect::<Option<_>>()?;
+                    let body = self.render_arm_body(a.body)?;
+                    let kw = if first { "if" } else { "else if" };
+                    out.push_str(&format!("{} ({}) {{ {} }} ", kw, conds.join(" || "), body));
+                    first = false;
+                }
+                None => else_body = Some(self.render_arm_body(a.body)?),
+            }
+        }
+        out.push_str(&format!("else {{ {} }}", else_body?));
+        Some(out)
+    }
+
     fn render_when(&self, subject: Option<NodeId>, arms: &[WhenArm]) -> Option<String> {
         match subject {
             Some(subj) => {
@@ -2011,6 +2098,17 @@ impl Engine {
                 });
                 if needs_cond {
                     return self.render_when_as_if(subj, arms);
+                }
+                // value class `when(this) { CR -> ... }` over companion constants.
+                // The constants render as static calls (`LineEndingMode.CR()`), which
+                // are not valid match patterns, and @Derive[Equatable]'s `==` is not
+                // visible inside the type's own body — so compare via the value field.
+                // Requires an `else` arm to stay exhaustive as an expression.
+                let has_else = arms.iter().any(|a| a.patterns.is_none());
+                if has_else {
+                    if let Some(field) = self.value_class_const_field(arms) {
+                        return self.render_when_value_class_consts(subj, arms, &field);
+                    }
                 }
                 let s = self.t(subj)?;
                 let bind = if let Kind::NameRef { original, .. } = self.g.kind(subj) {
