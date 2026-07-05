@@ -612,21 +612,53 @@ impl Parser {
                     if s == "," && depth == 1 {
                         expect_name = true;
                     }
-                    // Skip upper bound constraint `: Bound`（含嵌套泛型如 `Comparable<T>`）
+                    // Skip upper bound constraint `: Bound`（含嵌套泛型如 `Comparable<T>`）。
+                    // 关键：bdepth==0 时遇到的 `>` 是**类型参数表**的收尾，不属于 bound——
+                    // 必须留给外层循环消费，否则外层 depth 回不到 0，会吞掉函数名和参数表
+                    // （`<T : Node>` 单参数带 bound 即触发，渲染成 `func <T, type, ...>(: )`）。
                     if s == ":" {
                         self.bump();
                         let mut bdepth = 0i32;
+                        // 捕获 bound 供渲染 `where T <: Bound`（仓颉泛型无 bound 则无法
+                        // 调用 T 的成员方法）。编码进 params 末项：`"T <: Bound"`，
+                        // render_func 再拆分——避免改 Kind::Func 接口。
+                        let mut bound = String::new();
                         while !self.at_eof() {
-                            if self.is_sym("<") { bdepth += 1; }
-                            else if self.is_sym(">") || self.is_sym(">>") {
-                                if bdepth == 0 {
-                                    self.bump(); // 消费边界结束 `>`
-                                    break;
-                                }
+                            if self.is_sym(">>") {
+                                // 首个 `>` 收 bound 嵌套，次个收外层；bdepth<=1 都交给外层的
+                                // `>>` 双层处理（它按两个 `>` 递减 depth）。
+                                if bdepth <= 1 { break; }
+                                bdepth -= 2;
+                                bound.push_str(">>");
+                                self.bump();
+                            } else if self.is_sym(">") {
+                                if bdepth == 0 { break; } // 参数表收尾，留给外层
                                 bdepth -= 1;
+                                bound.push('>');
+                                self.bump();
+                            } else if self.is_sym("<") {
+                                bdepth += 1;
+                                bound.push('<');
+                                self.bump();
+                            } else if self.is_sym(",") && bdepth == 0 {
+                                break;
+                            } else {
+                                if let Tok::Ident(b) = self.peek() {
+                                    bound.push_str(&map_type(b));
+                                } else if let Tok::Sym(sy) = self.peek() {
+                                    bound.push_str(sy);
+                                }
+                                self.bump();
                             }
-                            else if self.is_sym(",") && bdepth == 0 { break; }
-                            self.bump();
+                        }
+                        // `>>` 在 bdepth==1 断开时首个 `>` 属于 bound 的嵌套泛型收尾
+                        if self.is_sym(">>") && bound.contains('<') && !bound.ends_with('>') {
+                            bound.push('>');
+                        }
+                        if !bound.is_empty() {
+                            if let Some(last) = params.last_mut() {
+                                *last = format!("{} <: {}", last, bound);
+                            }
                         }
                         continue;
                     }
@@ -862,7 +894,10 @@ impl Parser {
             if !self.eat_sym(",") {
                 break;
             }
-            self.skip_seps();
+            // 只跳换行，不跳 `;`：trailing comma 后的 `;`（`fallback,\n;`）是
+            // 条目/成员分隔符，被吞掉会把成员区的修饰符（`public companion ...`）
+            // 误捕为枚举条目。
+            self.skip_newlines();
         }
         // 解析枚举体的成员函数部分（`;` 之后）
         let mut enum_members = Vec::new();
@@ -876,6 +911,27 @@ impl Parser {
                         enum_members.push(self.parse_class(&mmods)?);
                     } else {
                         enum_members.push(self.parse_fun(&mmods)?);
+                    }
+                } else if self.is_kw("companion") {
+                    // enum 内 companion object：整块按括号平衡跳过。逐 token bump 会让
+                    // companion 的 `}` 提前终结成员循环，把 enum 自身的 `}` 泄漏到外层。
+                    // （成员本就未存入 Kind::Enum；companion 函数如 byName 的静态化是
+                    // 后续语义轮次的工作。）
+                    self.bump(); // companion
+                    self.eat_kw("object");
+                    if matches!(self.peek(), Tok::Ident(_)) {
+                        self.bump(); // 可选的 companion 名
+                    }
+                    if self.eat_sym("{") {
+                        let mut cdepth = 1;
+                        while cdepth > 0 && !self.at_eof() {
+                            if self.is_sym("{") {
+                                cdepth += 1;
+                            } else if self.is_sym("}") {
+                                cdepth -= 1;
+                            }
+                            self.bump();
+                        }
                     }
                 } else {
                     // 跳过其他成员
@@ -1126,6 +1182,16 @@ impl Parser {
                                 let v = self.parse_var_decl()?;
                                 companion_members.push(v);
                                 members.push(v);
+                            } else if self.is_kw("class")
+                                || self.is_kw("object")
+                                || self.is_kw("interface")
+                            {
+                                // companion 内的嵌套类（如 ksoup Element 的 NodeList）：
+                                // 按类体嵌套类同款处理——parse 后由 renderer 提升到顶层。
+                                // 不进 companion_members（它不是静态方法），否则其成员会被
+                                // 逐 token 跳过时误捡为 companion 成员，渲染成非法的
+                                // `static override func`。
+                                members.push(self.parse_class(&cmods)?);
                             } else {
                                 self.bump();
                             }
@@ -2139,9 +2205,11 @@ impl Parser {
                 Tok::Sym(s) if s == ">" => {
                     depth -= 1;
                     if depth == 0 {
+                        // `(` 普通构造；`{` trailing-lambda-only 构造
+                        // （`ThreadLocal<T?> { null }`，无 `{` 支持会回退成 `<` 比较）。
                         return matches!(
                             self.toks.get(i + 1).map(|t| &t.tok),
-                            Some(Tok::Sym(s)) if s == "("
+                            Some(Tok::Sym(s)) if s == "(" || s == "{"
                         );
                     }
                 }
@@ -2150,7 +2218,7 @@ impl Parser {
                     if depth <= 0 {
                         return matches!(
                             self.toks.get(i + 1).map(|t| &t.tok),
-                            Some(Tok::Sym(s)) if s == "("
+                            Some(Tok::Sym(s)) if s == "(" || s == "{"
                         );
                     }
                 }
@@ -2444,7 +2512,12 @@ impl Parser {
                         original: format!("{}<{}>", safe_name(&name), mapped.join(", ")),
                         decl: None,
                     });
-                    let args = self.parse_args()?;
+                    // trailing-lambda-only 构造：`Type<T> { ... }` 无圆括号
+                    let args = if self.is_sym("{") {
+                        vec![self.parse_lambda()?]
+                    } else {
+                        self.parse_args()?
+                    };
                     return Ok(self.g.add(Kind::Call { callee, args }));
                 }
                 self.bump();
@@ -2523,7 +2596,9 @@ impl Parser {
 
     fn skip_newlines_for_else(&mut self) {
         let save = self.pos;
-        self.skip_newlines();
+        // 连 `;` 一起跳：Kotlin 允许 `if (x) foo(); else bar()`（无大括号 then 带分号），
+        // 只跳换行会被 `;` 挡住，else 被误判为独立语句。
+        self.skip_seps();
         if !self.is_kw("else") {
             self.pos = save;
         }
@@ -2746,6 +2821,12 @@ pub fn safe_name(name: &str) -> String {
         "unsafe",
         "foreign",
         "with",
+        // 仓颉关键字，但在 Kotlin 中是合法标识符（ksoup Nodes.kt 有 `operator` 参数名）
+        "operator",
+        "redef",
+        "inout",
+        "synchronized",
+        "static",
     ];
     if KW.contains(&name) {
         format!("`{}`", name)

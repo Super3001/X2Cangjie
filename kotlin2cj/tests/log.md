@@ -1,9 +1,9 @@
 # kotlin2cj 测试日志
 
-- 用例总数: 202
-- 翻译成功: 202/202
-- 仓颉编译通过: 202/202
-- 运行输出匹配: 202/202
+- 用例总数: 213
+- 翻译成功: 213/213
+- 仓颉编译通过: 213/213
+- 运行输出匹配: 213/213
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
@@ -130,7 +130,18 @@
 | 208_object_static_field_access | ✅ | ✅ | ✅ |  |
 | 209_stringbuilder_append_rune | ✅ | ✅ | ✅ |  |
 | 20_char | ✅ | ✅ | ✅ |  |
+| 210_generic_bound | ✅ | ✅ | ✅ |  |
+| 211_companion_nested_class | ✅ | ✅ | ✅ |  |
+| 212_cangjie_keyword_idents | ✅ | ✅ | ✅ |  |
+| 213_object_negative_const | ✅ | ✅ | ✅ |  |
+| 214_enum_trailing_semi_companion | ✅ | ✅ | ✅ |  |
+| 215_if_semi_else | ✅ | ✅ | ✅ |  |
+| 216_middle_default_param | ✅ | ✅ | ✅ |  |
+| 217_generic_ctor_trailing_lambda | ✅ | ✅ | ✅ |  |
+| 218_user_field_keys | ✅ | ✅ | ✅ |  |
+| 219_getorput_index_assign | ✅ | ✅ | ✅ |  |
 | 21_bubble_sort | ✅ | ✅ | ✅ |  |
+| 220_nullable_generic_bound | ✅ | ✅ | ✅ |  |
 | 22_gcd | ✅ | ✅ | ✅ |  |
 | 23_primes | ✅ | ✅ | ✅ |  |
 | 24_fizzbuzz | ✅ | ✅ | ✅ |  |

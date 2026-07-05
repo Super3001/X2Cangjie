@@ -34,7 +34,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 30+ undeclared | state machine, when, inline; BLOCKED: cross-pkg deps |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 | 🔒 | - | DSL, delegate, reified |
-| 1g | ksoup-main | ksoup | 87 | 🔒 | - | 全量交叉编译 |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R2: parse 0 / semantic 1889 | 全量交叉编译 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -155,6 +155,31 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
   - ~10: undeclared inner class refs (Token.StartTag→StartTag, Token.Character→TokenCharacter, Attributes.Dataset→Dataset)
   - ~15: stdlib API gaps (isNullOrEmpty, hasNext, appendCodePoint, toRuneArray, concatToString, clone, add, clear)
   - 1: attributeKey param vs local let redefinition (naming conflict in function scope)
+
+### Phase 1 — 1g full-ksoup (2026-07-06) ⏳ R2 完成 — parse 战役收官,45→0 parse errors
+
+- **源已获取**: `C:/Codes/kotlin/ksoup` (shallow clone, fleeksoft/ksoup) — 按新规则自动 clone,解除 R1 的"无 Kotlin 源"阻塞
+- **翻译脚本**: `output/translate_1g.py` (per-file, 基于 translate_1e.py 模式, --check/--validate, 父目录前缀消歧, 剥离 per-file main)
+- **翻译**: 87/87 文件成功 → `output/target_1g/` (新目录,旧 R1 手补产物 `output/ksoup_cj/` 保留作对照)
+- **R2 错误轨迹**: 45 (parse) → 33 → 13 → 6 → 1 → **0 parse errors**
+- **R2 译器修复(10 项,详见 fix-history 2026-07-06 各条,每项都有靶向测试用例 210-220)**:
+  1. **P1 PARSER**: 泛型 bound `<T : Bound>` 吞参数表收尾 `>` → 修 + bound 编码 `"T <: Bound"` → render `where T <: Bound`(24/45 errors)
+  2. **PARSER**: companion 内嵌套 class(Element.NodeList)未解析,成员误捡为 static(20 errors)
+  3. **PARSER**: safe_name 补 `operator`/`redef`/`inout`/`synchronized`/`static`
+  4. **RENDER**: infer_literal_type 补 Unary(±) 递归 / FloatLit / charArrayOf→Array<Rune>
+  5. **PARSER**: enum 条目 trailing comma 后 `;` 被吞 + enum 内 companion 按块跳过
+  6. **PARSER**: `if (x) foo(); else` 分号挡住 else 前探(skip_seps)
+  7. **RENDER**: 中位默认值参数降级为位置参数(声明 render_func + 调用 fn_params 同规则)
+  8. **PARSER**: trailing-lambda-only 泛型构造 `Type<T?> { ... }` 误判为 `<` 比较
+  9. **HEURISTIC**: `.keys`/`.values` 映射加 provably_non_collection 守卫(用户类字段保留)
+  10. **RENDER**: `getOrPut(...)[k] = v` statement 级展开(IIFE 左值 + 裸 ctor 推断双修) + 可空泛型 bound `E : Element?` 丢弃 where 条目
+- **回归**: Phase 0 每轮全跑,最终 212/212 single(202+10 新增)+ 33/33 project 全绿
+- **⚠️ 语义层揭示(同 1e 教训)**: parse 清零后语义分析放行,真实基线 **1889 semantic errors**。顶层分类:
+  - 171 mismatched types(Option/T unwrap 等)
+  - 46 `notEmpty` 无匹配(Validate stub 缺失)/ 43 泛型裸用 / 37 `Tag` 歧义 / 31 operator '()'(lambda/IIFE)
+  - 30 `OutputSettings` + 25 `Regex` + 16 `KClass` undeclared(嵌套类提升引用 + stdlib/反射 stub gap)
+  - 28 for-in 非 Iterator / 21 HashMap 约束 / 20 enum pattern / 19 泛型推断 / 17 `lowerCase` / 17 `__k2cjRuneSlice` 歧义
+- **R3 候选(语义战役)**: ① `===`/`!==` 目前 lexer 退化为 `==`,类引用相等应映 refEq(indexInList 等会撞) ② Document.OutputSettings 等嵌套类提升后的限定名引用改写 ③ Regex/KClass/Validate stdlib stub ④ enum companion 函数(CoreCharset.byName)静态化而非丢弃 ⑤ mismatched types 大类细分
 
 ### Phase 1 — 1e ktor-io (2026-06-27) ⏳ R1 诊断完成
 

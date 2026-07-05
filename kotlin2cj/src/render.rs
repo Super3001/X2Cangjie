@@ -214,6 +214,49 @@ impl Engine {
             // ---- 语句 ----
             Kind::ExprStmt { expr } => self.t(expr),
             Kind::Assign { target, op, value } => {
+                // Index 目标的 base 是调用表达式（如 getOrPut 展开的 IIFE）时，仓颉
+                // 不接受复杂表达式作索引赋值左值——先提升为临时变量再赋值。
+                // 临时名带节点 id，避免同块内多次出现冲突。
+                if let Kind::Index { base, index } = self.g.kind(target) {
+                    if let Kind::Call { callee, args } = self.g.kind(*base) {
+                        // getOrPut 特化：statement 级展开。IIFE 版本有两个问题——
+                        // (a) IIFE 索引赋值是非法左值；(b) IIFE 内裸 `HashMap()` 无法
+                        // 推断泛型实参。改写成 `map[k] = (lam)()` 后，ctor 从 map 的
+                        // 值类型获得推断。
+                        if let Kind::Member {
+                            base: mbase,
+                            name: mname,
+                            ..
+                        } = self.g.kind(*callee)
+                        {
+                            if mname == "getOrPut" && args.len() == 2 {
+                                let m = self.t(*mbase)?;
+                                let k = self.t(args[0])?;
+                                // 单表达式 lambda 直接内联函数体：`(lam)()` 形式会挡住
+                                // 类型推断（裸 `HashMap()` 推不出泛型实参），
+                                // `map[k] = HashMap()` 则可从 map 值类型推断。
+                                let rhs = self
+                                    .single_expr_lambda_body(args[1])
+                                    .map(|e| self.t(e))
+                                    .unwrap_or_else(|| {
+                                        Some(format!("({})()", self.t(args[1])?))
+                                    })?;
+                                let i = self.t(*index)?;
+                                let v = self.t(value)?;
+                                let tmp = format!("__k2cjIdxRecv{}", target);
+                                return Some(format!(
+                                    "if (!({m}.contains({k}))) {{\n    {m}[{k}] = {rhs}\n}}\nlet {tmp} = {m}[{k}]\n{tmp}[{i}] {op} {v}",
+                                    m = m, k = k, rhs = rhs, tmp = tmp, i = i, op = op, v = v
+                                ));
+                            }
+                        }
+                        let b = self.t(*base)?;
+                        let i = self.t(*index)?;
+                        let v = self.t(value)?;
+                        let tmp = format!("__k2cjIdxRecv{}", target);
+                        return Some(format!("let {} = {}\n{}[{}] {} {}", tmp, b, tmp, i, op, v));
+                    }
+                }
                 let tt = self.render_assign_target(target)?;
                 let v = self.t(value)?;
                 // String += Rune/non-string: convert RHS to string
@@ -658,8 +701,14 @@ impl Engine {
             "third" if !safe && (self.looks_tuple(base) || !self.provably_non_collection(base)) => {
                 return Some(format!("{}[2]", b));
             }
-            "keys" => return Some(format!("{}{}keys()", b, dot)),
-            "values" => return Some(format!("{}{}values()", b, dot)),
+            // 接收者可证明是非集合（如用户类 Attributes 的 `keys` 字段）时保留字段访问，
+            // 否则 `attributes.keys = ...` 会被译成非法左值 `attributes.keys() = ...`
+            "keys" if !self.provably_non_collection(base) => {
+                return Some(format!("{}{}keys()", b, dot))
+            }
+            "values" if !self.provably_non_collection(base) => {
+                return Some(format!("{}{}values()", b, dot))
+            }
             other => {
                 // 数据驱动查表：从 stdlib_map 查找简单方法重命名
                 let receiver_hint = if self.looks_string(base) {
@@ -1025,10 +1074,49 @@ impl Engine {
         } else {
             ps
         };
-        let gen_suffix = if generic_params.is_empty() {
-            String::new()
+        // 仓颉命名参数（`name!: T = default`）必须位于全部位置参数之后。Kotlin 的
+        // 中位默认值参数（`fun f(q: String? = null, next: Boolean)`）在 Kotlin 侧
+        // 也无法按位置省略——降级为位置参数（去掉 `!` 与默认值），调用点不受影响。
+        let last_plain = params
+            .iter()
+            .rposition(|p| matches!(self.g.kind(*p), Kind::Param { default: None, .. }));
+        let ps: Vec<String> = ps
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if last_plain.is_some_and(|lp| i < lp) {
+                    if let Some(bang) = p.find("!: ") {
+                        let name = &p[..bang];
+                        let rest = &p[bang + 3..];
+                        let ty = rest.split(" = ").next().unwrap_or(rest);
+                        return format!("{}: {}", name, ty);
+                    }
+                }
+                p
+            })
+            .collect();
+        // generic_params 条目可能编码 bound（`"T <: Shape"`，见 parser::parse_generic_params）：
+        // `<...>` 只放名字，bound 拆到 `where` 子句（仓颉调用 T 成员方法必需）。
+        let (gen_suffix, where_clause) = if generic_params.is_empty() {
+            (String::new(), String::new())
         } else {
-            format!("<{}>", generic_params.join(", "))
+            let names: Vec<&str> = generic_params
+                .iter()
+                .map(|g| g.split(" <: ").next().unwrap_or(g))
+                .collect();
+            // 可空 bound（Kotlin `<E : Element?>`）在仓颉无对应约束语法，丢弃该
+            // where 条目（保守放宽；jsoup 此类方法体内只做引用比较，不调 E 成员）。
+            let bounds: Vec<&str> = generic_params
+                .iter()
+                .filter(|g| g.contains(" <: ") && !g.contains('?'))
+                .map(|g| g.as_str())
+                .collect();
+            let w = if bounds.is_empty() {
+                String::new()
+            } else {
+                format!(" where {}", bounds.join(", "))
+            };
+            (format!("<{}>", names.join(", ")), w)
         };
         if is_main {
             let b = self.render_block(body)?;
@@ -1040,7 +1128,7 @@ impl Engine {
                 Some(r) => format!(": {}", r),
                 None => String::new(),
             };
-            let sig = format!("{}{}({}){}", name, gen_suffix, ps.join(", "), r);
+            let sig = format!("{}{}({}){}{}", name, gen_suffix, ps.join(", "), r, where_clause);
             let b = self.render_block(body)?;
             let func_str = format!("func {} {}", sig, b);
             return Some(format!(
@@ -1056,7 +1144,7 @@ impl Engine {
             None if self.has_while_true_return(body) => ": Unit".to_string(),
             None => String::new(),
         };
-        let sig = format!("{}{}({}){}", name, gen_suffix, ps.join(", "), r);
+        let sig = format!("{}{}({}){}{}", name, gen_suffix, ps.join(", "), r, where_clause);
         if is_abstract {
             return Some(format!("public func {}", sig));
         }
@@ -1826,6 +1914,27 @@ impl Engine {
         Some(format!("{} {}{}", kw, name, ty))
     }
 
+    /// 无参 lambda 且函数体为单一表达式语句时返回该表达式（供内联，绕过
+    /// `(lam)()` 形式挡住泛型推断的问题）。
+    fn single_expr_lambda_body(&self, id: NodeId) -> Option<NodeId> {
+        if let Kind::Lambda { params, body } = self.g.kind(id) {
+            if !params.is_empty() {
+                return None;
+            }
+            if let Kind::Block { stmts } = self.g.kind(*body) {
+                if stmts.len() == 1
+                    && !matches!(
+                        self.g.kind(stmts[0]),
+                        Kind::VarDecl { .. } | Kind::Assign { .. } | Kind::Return { .. }
+                    )
+                {
+                    return Some(stmts[0]);
+                }
+            }
+        }
+        None
+    }
+
     fn infer_literal_type(&self, id: NodeId) -> Option<String> {
         match self.g.kind(id) {
             Kind::CollLit { ctor, elem, args } => {
@@ -1837,8 +1946,21 @@ impl Engine {
             Kind::Binary { op, .. } if op == "to" => Some("(String, String)".to_string()),
             Kind::StrTemplate { .. } => Some("String".to_string()),
             Kind::IntLit(_) => Some("Int64".to_string()),
+            Kind::FloatLit(_) => Some("Float64".to_string()),
             Kind::BoolLit(_) => Some("Bool".to_string()),
             Kind::CharLit(_) => Some("Rune".to_string()),
+            // 负数字面量 `-1` 是 Unary(-, IntLit)：递归推断。object val→field 拆分
+            // 需要字段类型标注，推断失败会产出非法的 `let x`（无类型无初始化）。
+            Kind::Unary { op, expr } if op == "-" || op == "+" => self.infer_literal_type(*expr),
+            // charArrayOf(...) 由 render_call 渲染为 Rune 数组字面量 → Array<Rune>
+            Kind::Call { callee, .. } => {
+                if let Kind::NameRef { original, .. } = self.g.kind(*callee) {
+                    if original == "charArrayOf" {
+                        return Some("Array<Rune>".to_string());
+                    }
+                }
+                None
+            }
             _ => None,
         }
     }
@@ -2523,6 +2645,13 @@ impl Engine {
                         let has = default.is_some();
                         any_default = any_default || has;
                         out.push((pn, ty.clone(), has));
+                    }
+                }
+                // 与 render_func 的声明侧降级一致：中位默认值参数（其后还有无默认值
+                // 参数）按位置参数处理，调用点不再加 `name:` 前缀。
+                if let Some(lp) = out.iter().rposition(|(_, _, has)| !*has) {
+                    for item in out.iter_mut().take(lp) {
+                        item.2 = false;
                     }
                 }
                 if any_default

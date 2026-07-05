@@ -81,6 +81,14 @@ version: 1.0.0
          回到 Stage 2（循环）
 ```
 
+## 目标源码获取
+
+**目标 git 仓库本地缺失时,默认 clone 到 `C:/Codes/kotlin/<repo-name>`,clone 完成后继续流程。** 不要因为本地没有 Kotlin 代码仓库而停下来等用户。
+
+- 先检查已知位置(state 文件中记录的路径,如 `C:/projects/kotlins/ktor`),已存在则直接用,不重复 clone
+- 缺失则 `git clone --depth 1 <upstream-url> C:/Codes/kotlin/<repo-name>`(浅克隆即可,只需源码不需要历史)
+- clone 后把实际路径写入 `state/optimization-state.md` 对应目标的"本地工程"列
+
 ## 状态管理
 
 `state/optimization-state.md` 是跨 run 的唯一真相源。
