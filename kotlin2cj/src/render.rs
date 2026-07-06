@@ -602,6 +602,10 @@ impl Engine {
             if let Some(alias) = self.companion_static_alias(original, name) {
                 return Some(format!("{}.{}", original, alias));
             }
+            // 嵌套类提升注册表：`Parent.Nested` → 提升后的实际名字（撞名时带父类名前缀）
+            if let Some(lifted) = self.lifted_nested.get(&(original.clone(), name.to_string())) {
+                return Some(crate::parser::safe_name(lifted));
+            }
             if self.is_class_name(original)
                 && (self.enum_entries(name).is_some() || self.is_class_name(name))
             {

@@ -86,9 +86,8 @@ fn detect_and_gen_imports(cj_code: &str) -> Vec<String> {
     if cj_code.contains("sort(") {
         imports.push("import std.sort.*".to_string());
     }
-    if cj_code.contains("Iterator") {
-        imports.push("import std.iterator.*".to_string());
-    }
+    // 注意：不要为 Iterator 注入 import——仓颉 1.0.5 没有 std.iterator 包，
+    // Iterator/Iterable 在 core 中自动可用。
     if cj_code.contains("convert") || cj_code.contains("toString()") {
         imports.push("import std.convert.*".to_string());
     }

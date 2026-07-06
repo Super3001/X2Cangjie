@@ -222,3 +222,28 @@
 - **层级**: L1 (render.rs 1 行改条件)
 - **测试**: 新增 220_nullable_generic_bound;Phase 0 回归见 R2 记录
 - **备注**: 后续语义错误已知:indexInList 体内 `===` 被 lexer 退化为 `==`,在无 bound 泛型 E 上非法。R3 候选:`===`/`!==` → refEq/!refEq(类引用相等)
+
+### 2026-07-06 — RENDER_GAP — 嵌套类提升后跨文件类型引用未消歧/未折叠
+
+- **目标**: ksoup-parser (1d, 1g 切片)
+- **文件**: engine.rs, render.rs
+- **修改**: engine.rs 新增 `apply_nested_lifting` 图归一化 pass：建 (父类, 嵌套名)→提升名注册表；提升名与已有顶层类撞名时按父类名前缀重命名（如 Token.Comment→TokenComment）；对全图类型字符串做限定链折叠。render.rs `render_member` 表达式位同步改写
+- **层级**: L2 (engine.rs 新 pass + render.rs 表达式位改写)
+- **测试**: 新增 221_nested_class_lifting + proj_nestedlift;Phase 0 214/214 + 34/34 通过
+- **备注**: 仅 project 模式生效(见下方经验记录);ksoup 语料该簇错误 151→0
+
+### 2026-07-06 — RENDER_GAP — project 模式注入不存在的 `import std.iterator.*`
+
+- **目标**: ksoup-parser (1d, 1g 切片)
+- **错误**: ksoup project 模式 11 个输出文件含 `import std.iterator.*`,仓颉 1.0.5 无 std.iterator 包(Iterator/Iterable 在 core 自动可用),cjc `can not find package 'std.iterator'` 挡住全部语义分析
+- **根因**: project.rs `detect_and_gen_imports()` 的启发式分支 `cj_code.contains("Iterator") → import std.iterator.*`。单文件路径(render.rs 头部注入)本无此映射,仅 project 模式受影响
+- **修复**: 删除该分支。同表其余映射(std.collection/deriving/sort/convert)与 stdlib_map.rs 的 std.math/std.io 均为真实包,已逐一确认
+- **层级**: L1 (project.rs -3 行)
+- **测试**: 新增 222_iterator_no_std_import(单文件) + proj_iterimport(project 模式,真正覆盖此 bug);Phase 0 215/215 + 35/35 通过
+- **备注**: ksoup project 模式重译后 `std.iterator` 0 处;cjc 全量错误 1595(can not find package 0 处)
+
+### 2026-07-06 — 经验 — per-file 翻译管线丢失跨文件上下文
+
+- **现象**: per-file 翻译管线(translate_1g.py 逐文件调用)对每个 .kt 单独起翻译单元,丢失跨文件上下文
+- **结论**: 跨文件语义修复(嵌套类提升消歧、跨文件类型注册等)只在 project 模式(目录输入)生效;per-file 管线测不出这类修复的效果
+- **决策**: 1g/1d 测量管线自 2026-07-06 起切换为 project 模式(目录输入直接喂 kotlin2cj)

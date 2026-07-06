@@ -34,6 +34,9 @@ pub struct Engine {
     pub(crate) class_index: HashMap<String, NodeId>,
     /// 索引：枚举名 → Enum 节点 ID。
     pub(crate) enum_index: HashMap<String, NodeId>,
+    /// 嵌套类提升注册表：(父类名, 嵌套类原名) → 提升后的顶层名字。
+    /// 与顶层类撞名的嵌套类会被重命名为 `父类名+嵌套类名`（如 Token.Comment → TokenComment）。
+    pub(crate) lifted_nested: HashMap<(String, String), String>,
 }
 
 impl Engine {
@@ -47,6 +50,8 @@ impl Engine {
             }
         }
         g.link_children();
+        // 嵌套类提升归一化：改写限定名引用、消除提升撞名（必须在建索引之前）。
+        let lifted_nested = apply_nested_lifting(&mut g);
         let avalanche_memory = vec![0u32; n];
 
         // 构建名称索引
@@ -91,6 +96,7 @@ impl Engine {
             func_index,
             class_index,
             enum_index,
+            lifted_nested,
         };
         eng.resolve_var_func_collisions();
         eng
@@ -426,4 +432,265 @@ impl Engine {
     pub fn output(&self) -> String {
         self.g.target(self.g.root).unwrap_or("").to_string()
     }
+}
+
+// ================================================================
+// 嵌套类提升归一化（nested class lifting normalization）
+// ================================================================
+//
+// 渲染阶段会把类内嵌套的 class/enum 提升（lift）为顶层声明，但：
+//   1. 源码中的限定名引用（`Token.StartTag` 作类型标注、`as`/`is` 转换等）
+//      仍是成员访问形式，提升后 cjc 报 "not a member of class"；
+//   2. 提升出的嵌套类可能与其他顶层类撞名（如 Token.Comment vs nodes 包的 Comment），
+//      cjc 报 "ambiguous use of" / 重复定义。
+//
+// 本 pass 在 Engine 构造期（建索引之前）对图做归一化：
+//   A. 建立 (父类名, 嵌套类名) → 提升后名字 的注册表；
+//   B. 撞名的嵌套类重命名为 `父类名+嵌套类名`，并改写父类子树内的非限定引用；
+//   C. 全图类型字符串中的点分限定链按注册表折叠（`Token.Tag` → `TokenTag`）。
+// 表达式位的限定名引用（`Token.StartTag()` 等）由 render_member 查同一注册表改写。
+
+fn class_or_enum_name(kind: &Kind) -> Option<&str> {
+    match kind {
+        Kind::Class { name, .. } => Some(name),
+        Kind::Enum { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+fn apply_nested_lifting(g: &mut Graph) -> HashMap<(String, String), String> {
+    let n = g.nodes.len();
+    // 1. 收集嵌套 class/enum：(父类节点, 父类名, 嵌套节点, 嵌套名)
+    let mut nested: Vec<(NodeId, String, NodeId, String)> = Vec::new();
+    for id in 0..n {
+        if let Kind::Class {
+            name: pname,
+            members,
+            ..
+        } = &g.nodes[id].kind
+        {
+            for &m in members {
+                if let Some(nname) = class_or_enum_name(&g.nodes[m].kind) {
+                    nested.push((id, pname.clone(), m, nname.to_string()));
+                }
+            }
+        }
+    }
+    if nested.is_empty() {
+        return HashMap::new();
+    }
+
+    // 2. 名字出现计数：顶层 class/enum + 全部待提升嵌套类（提升后共享顶层命名空间）
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    if let Kind::Program { items } = &g.nodes[g.root].kind {
+        for &it in items {
+            if let Some(nm) = class_or_enum_name(&g.nodes[it].kind) {
+                *counts.entry(nm.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+    for (_, _, _, nname) in &nested {
+        *counts.entry(nname.clone()).or_insert(0) += 1;
+    }
+
+    // 3. 注册表 + 重命名计划（仅撞名时加父类名前缀；前缀名若仍撞名则放弃重命名）
+    let mut registry: HashMap<(String, String), String> = HashMap::new();
+    let mut renames: Vec<(NodeId, NodeId, String, String)> = Vec::new();
+    for (pid, pname, nid, nname) in &nested {
+        let colliding = counts.get(nname).copied().unwrap_or(0) > 1;
+        let candidate = format!("{}{}", pname, nname);
+        let final_name = if colliding && !counts.contains_key(&candidate) {
+            candidate
+        } else {
+            nname.clone()
+        };
+        registry.insert((pname.clone(), nname.clone()), final_name.clone());
+        if final_name != *nname {
+            renames.push((*pid, *nid, nname.clone(), final_name));
+        }
+    }
+    // 父类自身被重命名时（嵌套中的嵌套），补充以新父类名为键的别名
+    let renamed_parents: HashMap<String, String> = renames
+        .iter()
+        .map(|(_, _, old, new)| (old.clone(), new.clone()))
+        .collect();
+    let aliases: Vec<((String, String), String)> = registry
+        .iter()
+        .filter_map(|((p, nm), f)| {
+            renamed_parents
+                .get(p)
+                .map(|pn| ((pn.clone(), nm.clone()), f.clone()))
+        })
+        .collect();
+    registry.extend(aliases);
+
+    // 4. 全图类型字符串折叠限定链（使用原始名字，需先于第 5 步的非限定重命名）
+    for id in 0..n {
+        rewrite_types_in_kind(&mut g.nodes[id].kind, &|ty| {
+            collapse_qualified_chains(ty, &registry)
+        });
+    }
+
+    // 5. 应用重命名：改声明名 + 父类子树内的非限定引用（NameRef 与类型字符串）
+    if !renames.is_empty() {
+        for (pid, nid, old, new) in &renames {
+            match &mut g.nodes[*nid].kind {
+                Kind::Class { name, .. } => *name = new.clone(),
+                Kind::Enum { name, .. } => *name = new.clone(),
+                _ => {}
+            }
+            let mut stack = vec![*pid];
+            while let Some(cur) = stack.pop() {
+                if let Kind::NameRef { original, .. } = &mut g.nodes[cur].kind {
+                    if original == old {
+                        *original = new.clone();
+                    }
+                }
+                rewrite_types_in_kind(&mut g.nodes[cur].kind, &|ty| {
+                    rewrite_bare_ident(ty, old, new)
+                });
+                stack.extend(g.children_of(cur));
+            }
+        }
+        eprintln!(
+            "SOC: renamed {} lifted nested class(es) to avoid top-level collision ({})",
+            renames.len(),
+            renames
+                .iter()
+                .map(|(_, _, _, new)| new.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    registry
+}
+
+/// 对 Kind 中所有类型字符串字段应用改写函数。
+fn rewrite_types_in_kind(kind: &mut Kind, f: &dyn Fn(&str) -> String) {
+    match kind {
+        Kind::Func {
+            ret, receiver_type, ..
+        } => {
+            if let Some(r) = ret {
+                *r = f(r);
+            }
+            if let Some(r) = receiver_type {
+                *r = f(r);
+            }
+        }
+        Kind::Param { ty, .. } => *ty = f(ty),
+        Kind::Class {
+            ctor_params,
+            superclass,
+            interfaces,
+            ..
+        } => {
+            for cp in ctor_params {
+                cp.ty = f(&cp.ty);
+            }
+            if let Some(s) = superclass {
+                *s = f(s);
+            }
+            for i in interfaces {
+                *i = f(i);
+            }
+        }
+        Kind::Enum { params, .. } => {
+            for cp in params {
+                cp.ty = f(&cp.ty);
+            }
+        }
+        Kind::VarDecl { ty: Some(ty), .. } => *ty = f(ty),
+        Kind::CollLit {
+            elem: Some(elem), ..
+        } => *elem = f(elem),
+        Kind::IsCheck { ty, .. } => *ty = f(ty),
+        Kind::TypePat { ty } => *ty = f(ty),
+        Kind::TypeCast { ty, .. } => *ty = f(ty),
+        Kind::Try { catches, .. } => {
+            for c in catches {
+                c.ty = f(&c.ty);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 扫描类型字符串中的点分标识符链（`A.B.C`），交由 `map` 决定是否整体改写。
+/// `map` 返回 None 时原样保留。非标识符字符逐一透传。
+fn rewrite_ident_chains(ty: &str, map: &dyn Fn(&[String]) -> Option<String>) -> String {
+    let chars: Vec<char> = ty.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_alphabetic() || chars[i] == '_' {
+            let mut segs: Vec<String> = Vec::new();
+            let mut j = i;
+            loop {
+                let mut s = String::new();
+                while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                    s.push(chars[j]);
+                    j += 1;
+                }
+                segs.push(s);
+                if j + 1 < chars.len()
+                    && chars[j] == '.'
+                    && (chars[j + 1].is_alphabetic() || chars[j + 1] == '_')
+                {
+                    j += 1; // 吃掉 '.'，继续读下一段
+                } else {
+                    break;
+                }
+            }
+            match map(&segs) {
+                Some(rep) => out.push_str(&rep),
+                None => out.push_str(&segs.join(".")),
+            }
+            i = j;
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 按注册表折叠限定链：`Token.Tag` → `TokenTag`，`Token.TokenType` → `TokenType`。
+/// 首段必须命中注册表才折叠；未命中（如 `Map.Entry`）原样保留。
+fn collapse_qualified_chains(ty: &str, registry: &HashMap<(String, String), String>) -> String {
+    rewrite_ident_chains(ty, &|segs| {
+        if segs.len() < 2 {
+            return None;
+        }
+        let mut final_name = registry.get(&(segs[0].clone(), segs[1].clone()))?.clone();
+        let mut cur = segs[1].clone();
+        let mut k = 2;
+        while k < segs.len() {
+            match registry.get(&(cur.clone(), segs[k].clone())) {
+                Some(f) => {
+                    final_name = f.clone();
+                    cur = segs[k].clone();
+                    k += 1;
+                }
+                None => break,
+            }
+        }
+        let mut rep = final_name;
+        for s in &segs[k..] {
+            rep.push('.');
+            rep.push_str(s);
+        }
+        Some(rep)
+    })
+}
+
+/// 非限定标识符重命名：仅替换单段（不带点）且与 `old` 完全相同的标识符。
+fn rewrite_bare_ident(ty: &str, old: &str, new: &str) -> String {
+    rewrite_ident_chains(ty, &|segs| {
+        if segs.len() == 1 && segs[0] == old {
+            Some(new.to_string())
+        } else {
+            None
+        }
+    })
 }

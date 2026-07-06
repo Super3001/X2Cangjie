@@ -12,6 +12,15 @@ version: 1.0.0
 - 定时：建议每 4 小时跑一次 `/goal "kotlin2cj 翻译 <target> 0 compile errors"`
 - 手动：`/goal "k2cj-optimize target=ksoup"`
 
+## Token 预算（显式覆盖全局规则）
+
+本工作流**显式覆盖**全局 CLAUDE.md 规则 6 的预算（30k/task、100k/session）：
+
+- **k2cj-optimize session 预算：5,000,000 tokens**（含全部子代理用量）
+- 理由：一轮"翻译→编译→诊断→修复→回归"循环中仅 fixer 单轮就常需 100k+，全局预算与本工作流的粒度不匹配
+- 仍需遵守的部分：逼近 5M 时把进度 checkpoint 到 `state/optimization-state.md` 后再继续或换 session；轮次收尾时报告本 session 的大致用量（fail loud，不静默超支）
+- 不要因为用量超过 100k 而中断循环或建议换 session——只以 5M 为准
+
 ## 核心概念
 
 这个 skill 是 SOC 理论第七节（LLM 作为通用算子）和架构 C（Loop Engineering）的融合实现：

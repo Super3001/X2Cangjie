@@ -31,10 +31,10 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1a | ksoup-exception | ksoup | 5 | ✅ | 0 | data class, sealed, enum |
 | 1b | ksoup-safety+io | ksoup | 5 | ✅ | 0 | companion, extension, lambda |
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
-| 1d | ksoup-parser | ksoup | 16 | ⏳ | 30+ undeclared | state machine, when, inline; BLOCKED: cross-pkg deps |
+| 1d | ksoup-parser | ksoup | 16 | ⏳ | 411 (1g 切片) | state machine, when, inline; 重定义为 1g 全量编译中 parser 子包切片(2026-07-06); 测量管线=project 模式 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 | 🔒 | - | DSL, delegate, reified |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R2: parse 0 / semantic 1889 | 全量交叉编译 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R3: 1595 (project 模式) | 全量交叉编译; 2026-07-06 起测量管线切换为 project 模式(translate_1g.py per-file 保留作对照) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -180,6 +180,20 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
   - 30 `OutputSettings` + 25 `Regex` + 16 `KClass` undeclared(嵌套类提升引用 + stdlib/反射 stub gap)
   - 28 for-in 非 Iterator / 21 HashMap 约束 / 20 enum pattern / 19 泛型推断 / 17 `lowerCase` / 17 `__k2cjRuneSlice` 歧义
 - **R3 候选(语义战役)**: ① `===`/`!==` 目前 lexer 退化为 `==`,类引用相等应映 refEq(indexInList 等会撞) ② Document.OutputSettings 等嵌套类提升后的限定名引用改写 ③ Regex/KClass/Validate stdlib stub ④ enum companion 函数(CoreCharset.byName)静态化而非丢弃 ⑤ mismatched types 大类细分
+
+### Phase 1 — 1d ksoup-parser (2026-07-06) ⏳ R1 完成 — 重定义为 1g 切片 + 嵌套类提升战役
+
+- **重定义**: 1d 单独翻译不可行（fix-history 2026-06-17 结论），重定义为 1g 全量编译中 parser 子包 16 文件切片。基线（per-file 管线, r2f 日志）: 525 errors / 13 文件（tokeniser_state/html_tree_builder_state/parse_error 三文件干净）。
+- **诊断（切片根因簇）**: ① 嵌套类提升引用未改写+撞名（最大簇 ~151, Token.StartTag/TokenType 等 + ambiguous Tag/Comment/Character）② stdlib stub gap（Reader/StringReader/IOException/appendCodePoint 等）③ enum companion 常量（TokeniserState.nullChar）④ Option unwrap/集合 API 等。
+- **修复 1（嵌套类提升, fixer R1）**: engine.rs 新增 `apply_nested_lifting` 图归一化 pass — (父类,嵌套名)→提升名注册表；撞名时父类名前缀重命名（Token.Comment→TokenComment 等 5 个）；全图类型字符串限定链折叠。render.rs render_member 表达式位改写。测试 221 + proj_nestedlift。该簇 ksoup 语料 151→0。
+- **修复 2（std.iterator, fixer R2）**: project.rs `detect_and_gen_imports` 启发式注入不存在的 `import std.iterator.*`（11 文件, 挡住全部语义分析）→ 删除。测试 222 + proj_iterimport。
+- **⚠️ 关键发现 — per-file 管线丢失跨文件上下文**: translate_1g.py 逐文件调用翻译器，Engine 每次只见单文件，跨文件修复（嵌套提升消歧等）完全不生效（重译后错误数纹丝不动 1889）。**1g/1d 测量管线自本轮切换为 project 模式**（目录输入, project.rs 路径, 33 个项目测试保护）。translate_1g.py 保留作对照。
+- **新基线（project 模式）**: 总 1595（旧 per-file 1889），1d 切片 411（旧 525）。热点: html_tree_builder(122), tree_builder(42), tokeniser(37), token(37), character_reader(36)。
+- **切片错误分类（411）**: 69 undeclared identifier / 55 mismatched types / 43 not-member-of-class / 36 not-member-of-enum / 24 undeclared type / 23 invalid binary op / 20 operator '()' / 14 break-continue 非循环 / 13 missing argument / 11 generic 裸用 / 11 uninitialized member。
+- **project 模式已知遗留**: ① LinkedList.kt 泛型 typealias `typealias LinkedList<E> = MutableList<E>` parse error → 文件被静默跳过（且 project.rs 报"成功 86"无失败上报，计数口径需修）② 输出文件名无父目录前缀消歧（ksoup 当前无 basename 撞名, 暂无碍）。
+- **回归**: 两轮修复后 215/215 single + 35/35 project 全绿（基线实测 213/33, 非 state 记载的 202/33——历史用例数已增长）。
+- **R2 候选**: ① enum companion 常量静态化（TokeniserState.nullChar, 36 not-member-of-enum）② stdlib stub（Reader/StringReader/IOException/appendCodePoint）③ break/continue 在 when 内被误判非循环（14）④ LinkedList 泛型 typealias parse ⑤ mismatched types 细分。
+- **改动未提交**（engine.rs, render.rs, project.rs + 4 组新测试 + fix-history 3 条）。
 
 ### Phase 1 — 1e ktor-io (2026-06-27) ⏳ R1 诊断完成
 
