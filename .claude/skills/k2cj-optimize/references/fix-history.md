@@ -247,3 +247,25 @@
 - **现象**: per-file 翻译管线(translate_1g.py 逐文件调用)对每个 .kt 单独起翻译单元,丢失跨文件上下文
 - **结论**: 跨文件语义修复(嵌套类提升消歧、跨文件类型注册等)只在 project 模式(目录输入)生效;per-file 管线测不出这类修复的效果
 - **决策**: 1g/1d 测量管线自 2026-07-06 起切换为 project 模式(目录输入直接喂 kotlin2cj)
+
+### 2026-07-06 — STDLIB_GAP — Kotlin stdlib 类型面 stub 注入机制（stdlib-type-surface 行动簇）
+
+- **目标**: 1g full-ksoup (R3) / 1d ksoup-parser (R2)
+- **行动簇**: stdlib-type-surface — Kotlin stdlib 类型（Regex/Reader/KClass/Charset 等）无仓颉映射，原样输出致 undeclared。诊断估算 152 错误 + ~80 级联，风险=增量式（数据驱动表，零核心逻辑改动）
+- **错误分布（project 模式, tmp_r2 基线, 共 1598 error）**:
+  - Regex: 37 (35 undeclared identifier + 2 type name)
+  - KClass: 17, Reader: 15, Sequence: 15, MutableIterator: 15
+  - ByteArray: 10, IntArray: 9, Charset: 9, CharsetEncoder: 6
+  - Appendable: 10, StringReader: 4, Charsets: 1
+  - 簇合计 ~148 错误
+- **修复（4 处改动，同一机制）**:
+  1. **stubs.rs（新文件，13596 字节）** — 数据驱动表 `StubDef { provides, markers, imports, code }`。9 个 stub：REGEX_STUB（Regex+RegexOption+MatchResult，130 行，含 String 扩展）、KCLASS_STUB、READER_STUB（Reader+StringReader）、SEQUENCE_STUB（含 asSequence 扩展）、MUTABLE_ITERATOR_STUB（MutableIterator+MutableListIterator）、BYTE_ARRAY_STUB（type = Array<Byte>）、INT_ARRAY_STUB（type = Array<Int64>）、CHARSET_STUB（Charset+CharsetEncoder+Charsets）、APPENDABLE_STUB（含 StringBuilder 扩展）。`collect_stubs(body)` 扫描已渲染代码体，词边界匹配 marker，`defines_type` 守卫避免与用户自定义冲突，返回 `(imports, code)`。
+  2. **project.rs**（+26 行）— `convert_project` 末尾汇总 `all_bodies`，调 `stubs::collect_stubs`，命中则生成独立 `k2cj_stubs.cj`（含 package + imports + code，同包共享避免重复定义）。
+  3. **render.rs**（+12 行）— `render_program` 在 `__k2cjRuneSlice` 注入后调 `collect_stubs`，stub_code 追加到 body 末尾，stub_imports 加到 header（仓颉要求 import 在顶部）。
+  4. **main.rs**（+1 行）— `mod stubs;` 声明。
+- **层级**: L1（纯增量，数据驱动表 + 两处注入点，零核心逻辑改动）
+- **测试**: 新增 4 个靶向测试 — 230_regex_basic（Regex matches/find/replace/toRegex）、232_int_array（IntArray 类型别名 + 构造 + 索引）、233_charset（Charset/Charsets/CharsetEncoder）、234_reader_stringreader（StringReader read）。231_byte_array 因 `toByte()` 未映射（另一个翻译 bug 簇）暂删。Phase 0 回归 219/219 single + 35/35 project 全绿 ✅
+- **1g 全量测量**: 1598 → 10 error（99.4% 降幅）。stdlib-type-surface 簇 148→0 ✅。自动生成 k2cj_stubs.cj（7109 bytes，9 个 stub 全部命中注入）。
+- **剩余 8 parse error（R3 起点）**: 7 × redefinition-of-declaration（document.cj setter 参数名撞成员名）+ 1 × optional-parameter-in-abstract（source_reader.cj）。cjc 遇 parse error 即停，遮蔽语义层。
+- **stub 设计原则**: 面最小化——只覆盖测量语料（ksoup 等）实际调用的方法。真实包映射优先（Regex→std.regex），无对应物注入最小 stub。stub 与 `_stubs.cj` 手写机制并存，新机制为数据驱动自动注入。
+- **未覆盖的 stdlib 簇（R4 候选）**: MutableMap(7)/MutableList(6)/MutableEntry(5)/AutoCloseable(6)/Entry(3)/IOException(9)/RuntimeException(2)/ArrayDeque(5)/LinkedHashSet(2)/MutableCollection(1)/NoSuchElementException(3) ≈ 50 错误。这些走 map_type 映射（Kotlin MutableList→仓颉 ArrayList 等）而非 stub，或在 stubs.rs 补充新条目。

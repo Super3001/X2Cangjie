@@ -211,6 +211,7 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
 
     // 7. 为每个源文件生成 .cj 输出
     let mut files_written = 0usize;
+    let mut all_bodies = String::new(); // 汇总代码体，用于 stub 注入检测
     for (fi, item_ids) in file_items.iter().enumerate() {
         let kt_path = &file_ranges[fi].0;
         let cj_name = kt_to_cj_filename(kt_path);
@@ -247,6 +248,10 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
             body
         };
 
+        // 汇总代码体（stub 注入检测用）
+        all_bodies.push_str(&body);
+        all_bodies.push('\n');
+
         // 检测需要的 import
         let imports = detect_and_gen_imports(&body);
 
@@ -273,6 +278,27 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
 
     if files_written == 0 {
         return Err("翻译后没有生成任何有效文件".to_string());
+    }
+
+    // 7.5 注入 Kotlin stdlib 类型面 stub（同包共享，写入独立文件避免重复定义）
+    if let Some((stub_imports, stub_code)) = crate::stubs::collect_stubs(&all_bodies) {
+        let mut stub_file = String::new();
+        stub_file.push_str(&format!("package {}\n\n", cangjie_pkg));
+        for imp in &stub_imports {
+            stub_file.push_str(imp);
+            stub_file.push('\n');
+        }
+        if !stub_imports.is_empty() {
+            stub_file.push('\n');
+        }
+        stub_file.push_str(&stub_code);
+        if !stub_file.ends_with('\n') {
+            stub_file.push('\n');
+        }
+        let stub_path = src_dir.join("k2cj_stubs.cj");
+        std::fs::write(&stub_path, &stub_file)
+            .map_err(|e| format!("写入 {} 失败: {}", stub_path.display(), e))?;
+        files_written += 1;
     }
 
     // 8. 生成 cjpm.toml

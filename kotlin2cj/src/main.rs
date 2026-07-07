@@ -16,6 +16,7 @@ mod render;
 mod render_calls;
 #[allow(dead_code)]
 mod stdlib_map;
+mod stubs;
 
 use std::process::ExitCode;
 

@@ -13,23 +13,44 @@
 | **NODE_GAP** | 需要新增 `Kind` 变体（语法结构无法表示） | `node.rs`、`parser.rs` |
 | **AMBIENT** | 翻译产物正确但仓颉编译器版本/环境问题 | 不修改翻译器 |
 
+## 输出组织：行动簇
+
+报告的核心产出单位是**行动簇**（定义见 SKILL.md 核心概念），不是逐错误清单。错误是症状，簇是病因：把 N 个错误按"同一个翻译器缺陷"归组——同组错误只需改一处逻辑就能全部消失。归组抓手是**错误消息模板 + 标识符名聚类**（先 `sed` 掉消息里的具体名字做模板统计，再对 undeclared/not-a-member 类错误统计引号内标识符的频次分布）。
+
+每个簇必须标注：
+
+- **修法明确度**：能否说清改哪个模块、怎么改、怎么写靶向测试。说不清 → 标记 `needs_investigation`，不进本轮队列
+- **风险等级**：`增量式`（加映射/stub/测试，波及面≈0）< `局部改写`（改一个渲染分支）< `核心重构`（动类型推断/解析主干）
+- **杠杆**：直接错误数 + 预估级联（该簇消掉后会连带消失的下游错误）
+
+`fix_priority` 是**按（杠杆/风险）比降序的簇队列**。可行动 ≠ 最大：高杠杆高风险簇（如 Option 自动解包）排在低风险簇（如 stdlib stub）之后，等回归测试面变厚再修。
+
 ## 输出格式
 
 ```json
 {
-  "total_errors": 23,
-  "classified": [
+  "total_errors": 1595,
+  "clusters": [
     {
-      "category": "RENDER_GAP",
-      "file": "output/ksoup_cj/src/Entities.cj",
-      "line": 42,
-      "message": "type mismatch: expected String, got Rune",
-      "root_cause": "render.rs: Index on String should use .get() not []",
-      "fix_direction": "L1: 修改 render_index 方法"
+      "cluster_id": "stdlib-type-surface",
+      "category": "STDLIB_GAP",
+      "root_cause": "Kotlin stdlib 类型（Regex/Reader/KClass...）无仓颉映射，原样输出致 undeclared",
+      "error_count": 152,
+      "cascade_estimate": "~80（这些类型上的方法调用错误）",
+      "evidence": {
+        "message_templates": ["undeclared type name 'X'", "undeclared identifier 'X'"],
+        "top_identifiers": {"Regex": 35, "KClass": 16, "Reader": 13}
+      },
+      "fix_direction": "映射到 std.regex 等真实包，无对应物注入最小 stub（沿用 _stubs 机制）",
+      "risk": "增量式",
+      "test_plan": "tests/cases/22x 每类型一个 .kt/.expected 对"
     }
   ],
+  "needs_investigation": [
+    {"cluster_id": "...", "why_unclear": "..."}
+  ],
   "unclassified": [],
-  "fix_priority": ["RENDER_GAP", "STDLIB_GAP", "HEURISTIC_GAP", "PARSER_GAP", "NODE_GAP"]
+  "fix_priority": ["stdlib-type-surface", "..."]
 }
 ```
 
@@ -47,5 +68,5 @@
 
 - 只读翻译产物和错误日志
 - 如无法归类，标记 `unclassified` 等待人工
-- 按 `fix_priority` 排序（render gap 通常最容易 fix，先处理）
+- `fix_priority` 按簇的（杠杆/风险）比降序，不按类别一刀切（旧口径"render gap 先处理"仅作参考）
 - 发现新翻译模式 → 追加到 `references/kotlin-cangjie-patterns.md`

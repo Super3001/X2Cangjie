@@ -2766,6 +2766,11 @@ impl Engine {
 }"#;
             body = format!("{}\n\n{}", helper, body);
         }
+        let stub_result = crate::stubs::collect_stubs(&body);
+        if let Some((_, stub_code)) = &stub_result {
+            body.push_str("\n\n");
+            body.push_str(stub_code);
+        }
         let mut header = String::new();
         if body.contains("ArrayList")
             || body.contains("HashMap")
@@ -2787,6 +2792,14 @@ impl Engine {
         }
         if body.contains("sort(_s") || body.contains("sort(") {
             header.push_str("import std.sort.*\n");
+        }
+        if let Some((stub_imports, _)) = &stub_result {
+            for imp in stub_imports {
+                if !header.contains(*imp) {
+                    header.push_str(imp);
+                    header.push('\n');
+                }
+            }
         }
         if !header.is_empty() {
             header.push('\n');

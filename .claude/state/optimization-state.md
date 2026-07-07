@@ -31,10 +31,10 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1a | ksoup-exception | ksoup | 5 | ✅ | 0 | data class, sealed, enum |
 | 1b | ksoup-safety+io | ksoup | 5 | ✅ | 0 | companion, extension, lambda |
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
-| 1d | ksoup-parser | ksoup | 16 | ⏳ | 411 (1g 切片) | state machine, when, inline; 重定义为 1g 全量编译中 parser 子包切片(2026-07-06); 测量管线=project 模式 | C:/Codes/kotlin/ksoup |
+| 1d | ksoup-parser | ksoup | 16 | ⏳ | R2: 待重测 (1g 全量 1598→10, parser 切片 parse 阶段 0 错, 语义层被 parse error 遮蔽) | state machine, when, inline; 重定义为 1g 全量编译中 parser 子包切片(2026-07-06); 测量管线=project 模式; R2 stdlib stub 注入完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 | 🔒 | - | DSL, delegate, reified |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R3: 1595 (project 模式) | 全量交叉编译; 2026-07-06 起测量管线切换为 project 模式(translate_1g.py per-file 保留作对照) | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R3: 10 (project 模式, stdlib stub 注入后) | 全量交叉编译; R2 stdlib-type-surface 簇消掉(148→0); 剩 8 parse error (7 redefinition-of-declaration + 1 optional-param-in-abstract) 遮蔽语义层 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -194,6 +194,32 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **回归**: 两轮修复后 215/215 single + 35/35 project 全绿（基线实测 213/33, 非 state 记载的 202/33——历史用例数已增长）。
 - **R2 候选**: ① enum companion 常量静态化（TokeniserState.nullChar, 36 not-member-of-enum）② stdlib stub（Reader/StringReader/IOException/appendCodePoint）③ break/continue 在 when 内被误判非循环（14）④ LinkedList 泛型 typealias parse ⑤ mismatched types 细分。
 - **改动未提交**（engine.rs, render.rs, project.rs + 4 组新测试 + fix-history 3 条）。
+
+### Phase 1 — 1d ksoup-parser (2026-07-06) ⏳ R2 完成 — stdlib-type-surface 簇消掉
+
+- **行动簇**: stdlib-type-surface（STDLIB_GAP）— Kotlin stdlib 类型（Regex/Reader/KClass/Charset 等）无仓颉映射，原样输出致 undeclared。诊断估算 152 错误 + ~80 级联，风险=增量式。
+- **R2 译器修复（4 处，全部 219/219 single + 35/35 project 回归通过 ✅）**:
+  1. **新增 stubs.rs**（13596 字节）— 数据驱动表 `StubDef { provides, markers, imports, code }`，9 个 stub：Regex+RegexOption+MatchResult、KClass、Reader+StringReader、Sequence、MutableIterator+MutableListIterator、ByteArray、IntArray、Charset+CharsetEncoder+Charsets、Appendable。词边界匹配 marker，`defines_type` 守卫避免与用户自定义冲突。
+  2. **project.rs 注入路径** — `convert_project` 末尾汇总 `all_bodies`，调 `stubs::collect_stubs` 生成独立 `k2cj_stubs.cj`（同包共享，含 package + imports + code）。
+  3. **render.rs 单文件注入路径** — `render_program` 在 `__k2cjRuneSlice` 注入后调 `collect_stubs`，stub_code 追加到 body 末尾，stub_imports 加到 header。
+  4. **main.rs** — `mod stubs;` 声明。
+- **1g 全量测量（project 模式, target_1g_proj/）**: **1598 → 10 error（99.4% 降幅）**。stdlib-type-surface 簇 148→0。自动生成 k2cj_stubs.cj (7109 bytes, 9 个 stub 全部命中注入)。
+- **剩余 8 个 parse error（R3 起点）**: 7 × `redefinition of declaration`（document.cj 的 parser/escapeMode/charset/syntax/prettyPrint/outline/indentAmount setter — Kotlin `fun parser(parser: Parser)` 参数名撞成员名）+ 1 × `optional parameter cannot be used in abstract function`（source_reader.cj 抽象方法默认参数）。cjc 遇 parse error 即停，遮蔽语义层。
+- **靶向测试**: 4 个（230_regex_basic, 232_int_array, 233_charset, 234_reader_stringreader）。231_byte_array 因 `toByte()` 未映射（另一个翻译 bug 簇）暂删，IntArray 已验证类型别名 stub 机制。
+- **diagnostician.md / SKILL.md 更新**: 引入"行动簇"概念（根因簇归组 + 杠杆/风险比排序 + 每轮只攻一簇）。
+- **文件**: stubs.rs (新, +13596), main.rs (+1), project.rs (+26), render.rs (+12), diagnostician.md (+31/-10), SKILL.md (+13), tests/cases/23x (+4 对)。
+- **R3 候选**: ① redefinition-of-declaration 簇（setter 参数名撞成员名，7 错误，需改名或加 `_` 前缀）② optional-parameter-in-abstract（1 错误，抽象方法去默认参数）③ 修完 parse error 后重测语义层真实错误数。
+
+### Phase 1 — 1g full-ksoup (2026-07-06) ⏳ R3 测量 — stdlib 簇清零, parse 簇待修
+
+- **R3 基线（project 模式, target_1g_proj/, 带 stub 注入）**: **10 error**（8 真 error + 2 cjpm 消息）。从 R2 的 1598 降至 10。
+- **stdlib-type-surface 簇**: 148 → 0 ✅（Regex 37 + KClass 17 + Reader 15 + Sequence 15 + MutableIterator 15 + ByteArray 10 + IntArray 9 + Charset 9 + CharsetEncoder 6 + Appendable 10 + StringReader 4 + Charsets 1）
+- **剩余 parse error 分布**:
+  - 7 × redefinition-of-declaration: document.cj:190(parser), 223(escapeMode), 227(charset), 235(syntax), 242(prettyPrint), 246(outline), 250(indentAmount) — Kotlin `fun X(x: X)` setter 参数名撞成员名
+  - 1 × optional-parameter-in-abstract: source_reader.cj:8 — `func read(bytes: ByteArray, offset!: Int64 = 0, ...)` 抽象方法默认参数
+- **遮蔽效应**: cjc 遇 parse error 即停，不进语义分析（同 1e/1g 教训）。修完 8 个 parse error 后语义层放行，预计揭示新的错误分布。
+- **k2cj_stubs.cj 自动注入验证**: 9 个 stub 全部命中（Regex/KClass/Reader/StringReader/Sequence/MutableIterator/MutableListIterator/ByteArray/IntArray/Charset/CharsetEncoder/Charsets/Appendable）。project 模式生成独立文件，单文件模式追加到 body 末尾。
+- **R4 候选（修完 parse 簇后）**: 等语义层放行后重新诊断，按行动簇排队。预计剩余 stdlib 簇（MutableMap/MutableList/AutoCloseable/IOException 等，~50 错误，未覆盖 stub）+ redefinition 簇下游 + 其他语义错误。
 
 ### Phase 1 — 1e ktor-io (2026-06-27) ⏳ R1 诊断完成
 
