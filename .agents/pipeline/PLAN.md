@@ -157,8 +157,8 @@ Phase 4: kotlinx-serialization → mockk → kotlinx-coroutines
 
 | 维度 | 架构来源 | 本系统实现 |
 |------|---------|-----------|
-| 知识组织 | **B** | `.claude/skills/` + `.claude/agents/` — 声明式配置 |
-| 质量控制 | **B** | `.claude/guards/` — 每阶段显式门禁 |
+| 知识组织 | **B** | `.agents/skills/` + `.agents/agents/` — 声明式配置 |
+| 质量控制 | **B** | `.agents/guards/` — 每阶段显式门禁 |
 | 时间循环 | **C** | `/goal` + cron — 自动反复跑到收敛 |
 | 并行隔离 | **C** | `git worktree` — 多个 fix 不冲突 |
 | 持久状态 | **C** | `state/optimization-state.md` — 跨 run 跨目标记忆 |

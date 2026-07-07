@@ -31,7 +31,7 @@
 ## 目录结构
 
 ```
-.claude/
+.agents/
 ├── agents/          ← 6 个 agent 角色定义（架构 B）
 ├── skills/          ← k2cj-optimize 工作流知识（架构 B）
 ├── guards/          ← 6 个阶段门禁标准（架构 B）
