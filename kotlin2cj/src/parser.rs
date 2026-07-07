@@ -629,6 +629,13 @@ impl Parser {
                     if s == "," && depth == 1 {
                         expect_name = true;
                     }
+                    // Kotlin star-projection `*` → 仓颉 `Any`（如 `KClass<*>` 的 `<*>`
+                    // 被误解析为函数泛型参数时,`*` 需映射为 `Any` 避免 cjc 拒绝）
+                    if s == "*" {
+                        gen_tokens.push("Any".to_string());
+                        self.bump();
+                        continue;
+                    }
                     // Skip upper bound constraint `: Bound`（含嵌套泛型如 `Comparable<T>`）。
                     // 关键：bdepth==0 时遇到的 `>` 是**类型参数表**的收尾，不属于 bound——
                     // 必须留给外层循环消费，否则外层 depth 回不到 0，会吞掉函数名和参数表
@@ -1902,6 +1909,14 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> PResult<NodeId> {
+        // throw 表达式（如 `?: throw X(...)` Elvis 右操作数，或 `= throw X(...)` 表达式体）。
+        // 1e R2 只在 parse_stmt 级别处理 throw，Elvis rhs 走 parse_unary 不识别 throw，
+        // 导致 `?? throw` 渲染丢异常实参。这里在表达式层加 throw 处理。
+        if self.is_kw("throw") {
+            self.bump();
+            let e = self.parse_expr()?;
+            return Ok(self.g.add(Kind::Throw { value: e }));
+        }
         if self.is_sym("!") || self.is_sym("-") || self.is_sym("+") || self.is_sym("*")
             || self.is_sym("++") || self.is_sym("--")
         {

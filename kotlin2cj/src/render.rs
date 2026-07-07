@@ -1464,6 +1464,26 @@ impl Engine {
                     }
                 })
                 .collect();
+            // 中位默认值参数降级（与 render_func L1085-1102 一致）：
+            // 仓颉命名参数（`name!: T = default`）必须位于全部位置参数之后。
+            // Kotlin 中位默认值参数（`init(a, b: String = "x", c: Int)`）降级为
+            // 位置参数（去 `!` 与默认值）。1g R2 修过 render_func，1f 提供 ctor 实例。
+            let last_plain = ctor_params.iter().rposition(|p| p.default.is_none());
+            let ps: Vec<String> = ps
+                .into_iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    if last_plain.is_some_and(|lp| i < lp) {
+                        if let Some(bang) = p.find("!: ") {
+                            let name = &p[..bang];
+                            let rest = &p[bang + 3..];
+                            let ty = rest.split(" = ").next().unwrap_or(rest);
+                            return format!("{}: {}", name, ty);
+                        }
+                    }
+                    p
+                })
+                .collect();
             body.push_str(&format!("{}init({}) {{\n", IND, ps.join(", ")));
             if let Some(sc) = &super_call {
                 body.push_str(&format!("{}{}{}\n", IND, IND, sc));
