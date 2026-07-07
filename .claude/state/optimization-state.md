@@ -33,7 +33,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | R4: 待重测 (1g 全量 10 error, it-shadowing 消掉, 新 5 undeclared type 显现) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
-| 1f | koin-core | koin | ~25 | 🔒 | - | DSL, delegate, reified |
+| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R1: 9 errors (3 <*> + 3 unnamed-named-param + 1 throw-expr + 1 duration-decl) | DSL, delegate, reified; R1 修 3 parse 簇 (inline-mods/generic-typealias/receiver-fn-type), 71/72 文件翻译 | C:/Codes/kotlin/koin |
 | 1g | ksoup-main | ksoup | 87 | ⏳ | R4: 10 (3 redefinition 参数名 shadowing + 5 undeclared type 未覆盖 stdlib + 2 cjpm) | R3 setter/optional-param 消掉; R4 it-shadowing 消掉(6处), 新 5 undeclared type 显现(MutableMap/MutableList/Entry/AutoCloseable); 剩 3 redefinition(参数名 shadowing: append×2+attributeKey) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
@@ -220,6 +220,41 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **遮蔽效应**: cjc 遇 parse error 即停，不进语义分析（同 1e/1g 教训）。修完 8 个 parse error 后语义层放行，预计揭示新的错误分布。
 - **k2cj_stubs.cj 自动注入验证**: 9 个 stub 全部命中（Regex/KClass/Reader/StringReader/Sequence/MutableIterator/MutableListIterator/ByteArray/IntArray/Charset/CharsetEncoder/Charsets/Appendable）。project 模式生成独立文件，单文件模式追加到 body 末尾。
 - **R4 候选（修完 parse 簇后）**: 等语义层放行后重新诊断，按行动簇排队。预计剩余 stdlib 簇（MutableMap/MutableList/AutoCloseable/IOException 等，~50 错误，未覆盖 stub）+ redefinition 簇下游 + 其他语义错误。
+
+### Phase 1 — 1f koin-core (2026-07-07) ⏳ R1 完成 — 3 parse 簇修复, 71/72 翻译
+
+- **源已获取**: `C:/Codes/kotlin/koin` (shallow clone, InsertKoinIO/koin)
+- **koin-core 路径**: `projects/core/koin-core/src/commonMain/kotlin` (commonMain 74 .kt / 5509 行,state 标 ~25 估算偏低,实际 commonMain 全量)
+- **scope 决策**: 翻译全 commonMain 74 文件。expect 类 (mp/KoinPlatformTools + mp/ThreadLocal) 走 stubs.rs 注入 (同 1g stdlib stub 经验)
+- **核心特性验证** (state 标注 DSL/delegate/reified):
+  - DSL: dsl/ 5 文件 (KoinApplication/ModuleDSL/ScopeDSL/DefinitionBinding/KoinConfiguration)
+  - delegate: ext/InjectProperty.kt (`by inject()`), `by lazy` 散落
+  - reified: 21 文件用 reified,18 文件用 inline/noinline/crossinline
+- **硬依赖边界**: mp/KoinPlatformTools.kt + mp/ThreadLocal.kt (expect 声明,需 stub)
+- **R1 首跑**: project 模式只生成 1 .cj 文件,3 个 parse 簇阻断合并源解析
+- **R1 修复 (3 簇, 全部 224/224 single + 35/35 project 回归通过 ✅)**:
+  1. **inline-fn-param-modifiers** (parser.rs parse_param_nodes + parse_generic_params):
+     - parse_param_nodes 故意不调用 skip_modifiers (避免误识参数名关键字),但也跳过 noinline/crossinline
+     - 修复: 加 eat_kw("noinline") + eat_kw("crossinline") (这两个是 inline 函数 lambda 参数专用,不作为参数名)
+     - parse_generic_params 把 'reified' 当作泛型参数名本身 (替代了 T),导致 'func f<reified>(...): T' + 'undeclared type name T'
+     - 修复: 加 is_generic_mod 检查跳过 reified/out/in (Kotlin 泛型修饰符)
+  2. **generic-typealias-declaration** (parser.rs parse_typealias):
+     - parse_typealias L565 expect_ident 后立即 expect_sym("=") 不识别 `typealias X<T> = Target<T>` 的 <T>
+     - 修复: expect_ident 后若 is_sym("<") 调 parse_generic_params 跳过 <T>
+     - 影响 1f 10 个 typealias,3 个带 <T>: BeanDefinition L148 / Callbacks L26 / OptionDSL L16
+  3. **receiver-function-type** (parser.rs parse_type_raw):
+     - parse_type_raw 不识别 `ReceiverType.() -> R` Kotlin 带接收者函数类型
+     - 解析 ReceiverType 后 expect_sym(")") 但得到 "." (receiver 分隔符)
+     - 修复: expect_ident + 嵌套类型 + 泛型实参后,若 is_sym(".") 且下一 token 是 "(",消费 "." 把 ReceiverType 当作函数类型第一个参数,转入 `(ReceiverType) -> R` 解析
+     - 影响 1f 8 处: Module L84/L93 / KoinApplication L22 / KoinConfiguration L34/L39/L47 / ModuleDSL L21 / ModuleExt L64
+- **靶向测试**: 238 (inline+noinline+crossinline+reified) + 239 (generic typealias) + 240 (receiver function type)
+- **1f R1 测量**: project 模式 71/72 文件翻译成功 (从 1 → 71,覆盖率 96%)。剩 1 parse error (val <E : Enum<E>> Enum<E>.qualifier 带泛型扩展属性,R2 候选)
+- **1f R1 编译**: 9 errors (8 printed)。分布:
+  - 3 × `expected type name after '<', found '*'` — Kotlin star-projection `Map<*>` (k_class_ext / definition_binding / option_d_s_l)
+  - 3 × `unnamed parameters must come before named parameters` (scope / bean_definition ×2)
+  - 1 × `expected expression after keyword 'throw', found '}'` (parameters_holder)
+  - 1 × `expected declaration, found 'Duration'` (duration_ext)
+- **R2 候选**: ① star-projection `<*>` 簇 (3 错误,parser.rs parse_type_raw L2801 已有 `*`→Any 但可能位置不对) ② unnamed-named-param-order 簇 (3 错误,1g R2 修过中位默认值参数,可能没覆盖全) ③ throw-expression-body 簇 (1e R2 修过 P2,可能没覆盖全) ④ 带泛型扩展属性 parse error (1 错误)
 
 ### Phase 1 — 1e ktor-io (2026-06-27) ⏳ R1 诊断完成
 

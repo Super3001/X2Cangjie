@@ -306,3 +306,39 @@
 - **测试**: 237_also_lambda_it（验证 `also` lambda 内联：body 的 `it` → `_also_it`，无 alias decl）。Phase 0 回归 221/221 single + 35/35 project 全绿 ✅。
 - **1g 测量**: 6 个 `it` redefinition 全部消掉 ✅。新显现 5 个 undeclared type（MutableMap × 2 + MutableList + Entry + AutoCloseable）——之前被 `it` redefinition 遮蔽，现在显现。这是未覆盖 stdlib 簇（R5 候选）。
 - **剩余 8 真 error（R5 起点）**: 3 × redefinition（参数名 shadowing: `let append = append.replace(...)` × 2 + `let attributeKey = settings.normalizeAttribute(attributeKey)` × 1 — Kotlin 允许参数名/局部变量名 shadowing，仓颉不允许）+ 5 × undeclared type（未覆盖 stdlib: MutableMap/MutableList/Entry/AutoCloseable — 走 map_type 映射或 stubs.rs 补充）。
+
+### 2026-07-07 — PARSER — noinline/crossinline/reified 修饰符未识别（inline-fn-param-modifiers 行动簇）
+
+- **目标**: 1f koin-core (R1)
+- **行动簇**: inline-fn-param-modifiers — k2cj 参数解析不跳过 noinline/crossinline,parse_generic_params 把 reified 当作泛型参数名本身。Project 模式 1f 翻译首跑只生成 1 .cj 文件。
+- **错误**: Koin.kt L107 `noinline parameters: ParametersDefinition? = null,` → PARSE ERROR "期望 ':', 但得到 Ident("parameters")" (project 模式合并行号报 L1046)。
+- **根因**: parse_param_nodes (parser.rs:757) 注释明确说"不调用 skip_modifiers() 避免误识参数名关键字(open/internal 等)"——但也跳过了 noinline/crossinline (inline 函数 lambda 参数专用修饰符,不会作为参数名)。另外 parse_generic_params (parser.rs:605) 把 `reified` 当作 Tok::Ident push 进 params,导致 `func f<reified>(...): T` + 'undeclared type name T'。
+- **修复**:
+  1. parse_param_nodes L759-761: 加 `self.eat_kw("noinline")` + `self.eat_kw("crossinline")` (这两个关键字只在 inline 函数 lambda 参数前合法,不作为参数名,可安全 eat_kw 跳过)
+  2. parse_generic_params L605-614: 加 `is_generic_mod = matches!(s.as_str(), "reified" | "out" | "in")` 检查,是则 bump + continue (Kotlin 泛型修饰符,仓颉不支持,跳过)
+- **层级**: L1 (parser.rs 两处 +5 行)
+- **测试**: 238_inline_param_modifiers (inline + noinline + crossinline + reified 综合测试)。Phase 0 回归 222/222 single + 35/35 project 全绿 ✅
+- **1f 测量**: 1f project 模式翻译从 1 → 35 .cj 文件 (修了 noinline/crossinline + reified 跳过后)。剩 3 parse error (typealias + receiver-fn-type 簇)。
+
+### 2026-07-07 — PARSER — typealias 不识别泛型参数 `<T>`（generic-typealias-declaration 行动簇）
+
+- **目标**: 1f koin-core (R1)
+- **行动簇**: generic-typealias-declaration — parse_typealias L566 expect_sym("=") 不识别 `typealias X<T> = Target<T>` 的 <T>。
+- **错误**: BeanDefinition.kt L148 `typealias Definition<T> = Scope.(ParametersHolder) -> T` → PARSE ERROR "期望 '=', 但得到 Sym('<')" (单文件直接报 L148)。
+- **根因**: parse_typealias (parser.rs:563-574) 流程: eat_kw("typealias") → expect_ident (读 "Definition") → **expect_sym("=")** — 但下一 token 是 `<` (泛型参数 `<T>` 的开始)。type_aliases 注册表是 name→target_type 映射 (无泛型),下游用 `X<Arg>` 时由 map_type 兜底;parse 阶段只需保证不报错。
+- **修复**: parse_typealias L565 expect_ident 后,若 is_sym("<") 调 parse_generic_params 跳过 `<T>` (params 和 suffix 不使用,只消费 token)。
+- **层级**: L1 (parser.rs parse_typealias +5 行)
+- **测试**: 239_generic_typealias (typealias StringList + StringMap<V> + IntToString)。Phase 0 回归 223/223 single + 35/35 project 全绿 ✅
+- **1f 测量**: 1f project 模式翻译从 35 → 71 .cj 文件 (消掉 BeanDefinition/Callbacks/OptionDSL 的 typealias parse error)。剩 1 parse error (receiver-fn-type 簇)。
+
+### 2026-07-07 — PARSER — 带接收者的函数类型 `ReceiverType.() -> R`（receiver-function-type 行动簇）
+
+- **目标**: 1f koin-core (R1)
+- **行动簇**: receiver-function-type — parse_type_raw 不识别 Kotlin 带接收者的函数类型语法 `ReceiverType.() -> R`。
+- **错误**: Module.kt L84 `fun scope(qualifier: Qualifier, scopeSet: ScopeDSL.() -> Unit)` → PARSE ERROR "期望 ')', 但得到 Sym('.')" (合并源 L304,Module.kt + FactoryOf.kt 两文件最小复现)。
+- **根因**: parse_type_raw (parser.rs:2760-2786) 函数类型分支处理 `(A, B) -> R` 标准形式,但不识别 `ReceiverType.() -> R`。parse_type_raw L2787 expect_ident 读 "ScopeDSL",L2789 `while is_sym(".") && peek_next_is_ident` —— 但下一 token 是 `(` 不是 ident,不消费 `.`,返回 "ScopeDSL"。parse_param_nodes 把 "ScopeDSL" 当作参数类型,expect_sym(")") 期望 `)` 但得到 `.`。
+- **修复**: parse_type_raw L2787 expect_ident + 嵌套类型 (`Outer.Inner`) + 泛型实参 (`<T>`) 处理后,新增检查 `is_sym(".") && toks[pos+1] == Sym("(")`。是则 bump 消费 `.`,把已读的 ReceiverType 当作函数类型第一个参数,转入 `(ReceiverType, ...) -> R` 解析 (仓颉函数类型支持此形式)。
+- **层级**: L1 (parser.rs parse_type_raw +25 行新分支)
+- **测试**: 240_receiver_function_type (Builder.() -> Unit + Builder.() -> Int 双向)。Phase 0 回归 224/224 single + 35/35 project 全绿 ✅
+- **1f 测量**: 1f project 模式翻译从 35 → 71 .cj 文件 (消掉 Module/KoinApplication/KoinConfiguration/ModuleDSL/ModuleExt 的 receiver-fn-type parse error)。剩 1 parse error (val <E : Enum<E>> Enum<E>.qualifier 带泛型扩展属性) + 9 编译错误。
+- **副作用**: 翻译产物 `extend Module<R,T1,T2,...>` (Module 非泛型类,语义错误) — 这是 parse_fun L710 generic_params.clear() 的 bug,清空了函数自身泛型参数。R2 候选 (1f 编译错误的潜在根因之一)。
