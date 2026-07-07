@@ -714,24 +714,47 @@ impl Parser {
         let mut name = self.expect_ident()?;
         // 跳过接收者类型上的泛型实参（如 `fun <T> ArrayList<T>.foo()` 中的 `<T>`），
         // 这样后续扩展函数解析时 receiver_type = ArrayList + generic_suffix (= <T>)。
+        // 1f R1: 只在 receiver 确实有泛型实参时才加 generic_suffix,避免
+        // `fun <T> KoinApplication.foo()` 误生成 `extend KoinApplication<T>`
+        let mut receiver_has_generic_args = false;
         if self.is_sym("<") && !generic_params.is_empty() {
-            let _ = self.try_skip_generic_args();
+            receiver_has_generic_args = self.try_skip_generic_args();
         }
         // 函数自身泛型形参：`fun name<T>(...)`（仅在无 `<` 前缀且确认为函数泛型时）
+        // 但 `<...>` 后跟 `.` 时是 receiver 泛型实参 (如 `fun ArrayList<Int>.foo()`),
+        // 不是函数泛型参数 — 移到 generic_suffix 作 receiver 实参
         if self.is_sym("<") && generic_params.is_empty() {
             self.parse_generic_params(&mut generic_params, &mut generic_suffix);
+            if self.is_sym(".") {
+                // receiver 泛型实参,移到 generic_suffix,不作为函数泛型参数
+                receiver_has_generic_args = true;
+                generic_params.clear();
+            }
         }
         // 扩展函数：`fun ReceiverType.name(...)` 或 `fun A.B.name(...)` → extend 语法
         let mut receiver_type: Option<String> = None;
         while self.eat_sym(".") {
             let recv = if let Some(prev) = receiver_type.take() {
                 format!("{}.{}", prev, map_type(&name))
-            } else {
+            } else if !generic_suffix.is_empty() && generic_params.is_empty() {
+                // generic_suffix 来自 L697 (receiver 泛型实参,如 Box<*> 被误解析
+                // 为函数泛型),加到 receiver_type
                 format!("{}{}", map_type(&name), generic_suffix)
+            } else if receiver_has_generic_args {
+                // receiver 有泛型实参 (L693 跳过 ArrayList<T> 的 <T>),
+                // 加 generic_suffix (来自 L687 函数泛型参数)
+                format!("{}{}", map_type(&name), generic_suffix)
+            } else {
+                // receiver 无泛型实参 (如 KoinApplication),不加 generic_suffix
+                map_type(&name).to_string()
             };
             receiver_type = Some(recv);
             name = self.expect_ident()?;
-            generic_params.clear();
+            // receiver 有泛型实参时,T 给了 receiver,func 不该再有泛型参数 (clear)
+            // receiver 无泛型实参时 (如 KoinApplication.foo),T 是 func 自身泛型,保留
+            if receiver_has_generic_args {
+                generic_params.clear();
+            }
         }
         self.push_scope();
         let params = self.parse_param_nodes()?;

@@ -2,8 +2,8 @@
 
 - 用例总数: 233
 - 翻译成功: 233/233
-- 仓颉编译通过: 232/233
-- 运行输出匹配: 232/233
+- 仓颉编译通过: 233/233
+- 运行输出匹配: 233/233
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
@@ -163,7 +163,7 @@
 | 246_top_level_var_func_collision | ✅ | ✅ | ✅ |  |
 | 247_fully_qualified_refined | ✅ | ✅ | ✅ |  |
 | 248_typealias_render | ✅ | ✅ | ✅ |  |
-| 249_expect_fun_stub_body | ✅ | ❌ | ❌ | error[0m: body of function 'readFile' is missing |
+| 249_ext_func_generic_param | ✅ | ✅ | ✅ |  |
 | 24_fizzbuzz | ✅ | ✅ | ✅ |  |
 | 25_fib_list | ✅ | ✅ | ✅ |  |
 | 26_bank | ✅ | ✅ | ✅ |  |
