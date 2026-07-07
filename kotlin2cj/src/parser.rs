@@ -2863,11 +2863,19 @@ impl Parser {
             return Ok(s);
         }
         let mut s = self.expect_ident()?;
-        // 点号分隔的嵌套类型名 e.g. `Outer.Inner`
+        // 点号分隔的嵌套类型名 e.g. `Outer.Inner` 或 fully-qualified `org.koin.Type`
+        // Kotlin 包名约定全小写 (org.koin.dsl),类名首字母大写 (KoinApplication)
+        // → 包名前缀(全小写 ident)覆盖只保留最后一段,嵌套类(PascalCase)保留拼接
+        // R3 简单覆盖破坏 221_nested_class_lifting,此精细区分避免回归
         while self.is_sym(".") && self.peek_next_is_ident() {
+            let is_package_prefix = s.chars().all(|c| c.is_lowercase() || c == '_');
             self.bump(); // eat '.'
             let part = self.expect_ident()?;
-            s = format!("{}.{}", s, part);
+            if is_package_prefix {
+                s = part; // 包名前缀,覆盖只保留最后一段
+            } else {
+                s = format!("{}.{}", s, part); // 嵌套类,保留拼接
+            }
         }
         // Kotlin 带接收者的函数类型 `ReceiverType.() -> R`：当前已读 ReceiverType
         // （可能带泛型实参 `<...>`），下一个 token 是 `.`，再下一个是 `(`。
