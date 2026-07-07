@@ -125,6 +125,7 @@ x2cj-skills 路径按 Claude Code 启动环境解析（同一份磁盘内容）�
 
 | 类型 | 位置 | 内容 | 谁加载 |
 |------|------|------|--------|
+| **私有** | `references/autonomous-strategy.md` | 自主选择进攻方向的策略（三层决策架构 + 量化打分） | orchestrator, diagnostician |
 | **私有** | `references/kotlin-cangjie-patterns.md` | Kotlin→Cangjie 翻译模式 | diagnostician, fixer |
 | **私有** | `references/fix-history.md` | 历次修复记录 | fixer |
 | **私有** | `references/optimization-goals.md` | 10 项优化目标（G1-G10） | orchestrator |
