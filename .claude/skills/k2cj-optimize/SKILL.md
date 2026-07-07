@@ -94,7 +94,7 @@ version: 1.0.0
                ▼
 ┌──────────────────────────────────────────────────────┐
 │  Stage 6: Verifier                                   │
-│  全量回归测试（187 单文件 + 32 项目 + 新增针对性测试）  │
+│  全量回归测试（221 单文件 + 35 项目 + 新增针对性测试）  │
 │  Agent: k2cj-verifier                                │
 │  Guard: guards/6-verify-guard.md                     │
 └──────────────┬───────────────────────────────────────┘
@@ -141,21 +141,25 @@ x2cj-skills 路径按 Claude Code 启动环境解析（同一份磁盘内容）�
 > 私有知识是项目累积的（每次 fix 追加模式+记录），外部知识是只读参考（从 x2cj-skills 查询）。两者不混放。
 
 ```markdown
-## 当前目标: ksoup
-## 迭代轮次: 3
-## 总编译错误: 23 → 15 → 7
+## 当前目标: ksoup (1g full-ksoup, project 模式)
+## 迭代轮次: 4
+## 总编译错误: 1598 → 10 → 10 → 10 → 10 (R1→R2→R3→R4)
 
-### 本轮 (R3)
-- 修改: render.rs — Index on String → .get()
-- 修改: heuristics.rs — looks_string 加 "codePointAt"
-- 回归: 187/187 ✓, 32/32 ✓
-- 新增测试: 214_string_codepoint_at
-- 剩余错误: 7 (3 RENDER_GAP, 2 STDLIB_GAP, 1 HEURISTIC_GAP, 1 NODE_GAP)
+### 本轮 (R4 — also lambda it-shadowing)
+- 行动簇: it-shadowing — also lambda 内联 `let it = _also_it` alias decl 撞外部 lambda 的 `it` 参数
+- 修改: parser.rs — build_also 重构,去掉 alias decl;新增 rename_namerefs_in_subtree 递归改 body 的 `it` NameRef → `_also_it`
+- 回归: 221/221 ✓, 35/35 ✓
+- 新增测试: 237_also_lambda_it
+- 剩余错误: 10 (3 redefinition 参数名 shadowing + 5 undeclared type 未覆盖 stdlib + 2 cjpm 消息)
 
 ### 历史
-- R1: render.rs + stdlib_map.rs 修改, 错误 23→15
-- R2: parser.rs 容错 + heuristics.rs 类型推断, 错误 15→7
+- R1: engine.rs apply_nested_lifting + project 模式切换, 1g 1889→1595 (project 模式)
+- R2: stubs.rs 9 个 stdlib stub + project.rs/render.rs 注入, 1g 1598→10 (stdlib-type-surface 簇 148→0)
+- R3: engine.rs CtorParam 冲突检测 + render_interface 默认参数 strip, 1g 8 setter redefinition→0
+- R4: parser.rs build_also it-shadowing 修复, 1g 6 it redefinition→0, 新显现 5 undeclared type
 ```
+
+> 数字基线 221+35 = 256 测试用例(2026-07-07 R4 实测)。Phase 0 起点为 202+33 = 235 (2026-06-14)。
 
 ## SOC 对齐
 

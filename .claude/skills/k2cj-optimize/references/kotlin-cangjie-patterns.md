@@ -14,6 +14,7 @@
 | `x?.let { it → ... }` | `if (let Some(it) = x) { ... }` | L2 | 安全作用域重绑定 |
 | `x ?: default` | `x ?? default` | L1 | Elvis → 空合并 |
 | `if (x != null) { x.foo() }` | `x?.foo()` 或 `if (let Some(v) = x) { v.foo() }` | L1/L2 | smart cast → 显式重绑定 |
+| `x.also { it -> body }` | `({ => let _also_it = x; <body with it→_also_it>; return _also_it })()` | L2 | also lambda 内联:body 的 `it` NameRef 重命名为 `_also_it`,避免与外部 lambda 的 `it` 作用域冲突(R4 it-shadowing 修复) |
 
 ## 集合模式
 
@@ -30,6 +31,7 @@
 | `x.indices` | `0..x.size` | L1 | |
 | `x[i]` (List) | `x[i]` | L1 | |
 | `x[i]` (String) | `x.get(i)` 或 `x.toRuneArray()[i]` | L1 | String 不能用下标取 Rune |
+| Kotlin stdlib 类型(Regex/Reader/KClass/Charset 等) | 注入 stub(`k2cj_stubs.cj`) | L2 | stubs.rs 数据驱动表 `StubDef { provides, markers, imports, code }`,project 模式生成独立文件,单文件模式追加到 body 末尾。`defines_type` 守卫避免与用户自定义冲突(R2 stdlib-type-surface 簇修复) |
 
 ## 数据类模式
 
@@ -83,3 +85,15 @@
 | `Nothing` | `Never` | 底部类型 |
 | `Any` | `Object` | 顶部类型 |
 | `typealias X = Y` | `type X = Y` | 仓颉去掉了 alias |
+
+## 作用域冲突模式（SOC 检测）
+
+> Kotlin 允许参数名/局部变量名/成员名/lambda 参数名相互 shadowing,仓颉不允许。译器需主动检测并重命名。
+
+| Kotlin 模式 | 译器处理 | L 级 | 说明 |
+|--------|---------|------|------|
+| `class X(var a: T) { fun a() }` (CtorParam var 撞方法名) | SOC `resolve_var_func_collisions` 检测 CtorParam 名是否在 `func_names` 里,冲突则 CtorParam.name 改成 `_X`,全图 NameRef == X 改成 _X(保守名字匹配) | L2 | engine.rs CtorParam 检测分支(R3 redefinition-of-declaration 簇修复,8 个 setter redefinition 消掉) |
+| `class X { fun a(a: T) }` (setter 参数名撞成员名) | 同上,SOC 检测后参数名重命名 | L2 | R3 行动簇,7 个 document.cj setter(parser/escapeMode/charset/syntax/prettyPrint/outline/indentAmount) |
+| `interface X { fun f(p: T = default) }` (interface 默认参数) | render_interface strip 默认参数后缀 ` = <default>` | L1 | render.rs render_interface 加默认参数 strip(R3 optional-parameter-in-abstract 修复)。**副作用**:调用方失去默认参数支持,Kotlin `r.read(bytes)` 不传 offset/length 仓颉需补值,这是另一个 bug 簇 |
+| `lambda { it -> ... lambda { it -> ... } }` (嵌套 lambda 的 it) | also lambda 内联:body 的 `it` NameRef 重命名为 `_also_it`,decl 指向 `_also_it` 声明的 Name 节点 | L2 | parser.rs build_also 重构 + rename_namerefs_in_subtree(R4 it-shadowing 修复,6 个 it redefinition 消掉) |
+| `fun f(p: T) { val p = ... }` (参数名/局部变量名 shadowing) | 未修复 — R5 候选 | — | 1g 剩余 3 redefinition(append×2 + attributeKey×1),Kotlin 允许,仓颉不允许 |
