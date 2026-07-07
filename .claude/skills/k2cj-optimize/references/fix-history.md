@@ -269,3 +269,28 @@
 - **剩余 8 parse error（R3 起点）**: 7 × redefinition-of-declaration（document.cj setter 参数名撞成员名）+ 1 × optional-parameter-in-abstract（source_reader.cj）。cjc 遇 parse error 即停，遮蔽语义层。
 - **stub 设计原则**: 面最小化——只覆盖测量语料（ksoup 等）实际调用的方法。真实包映射优先（Regex→std.regex），无对应物注入最小 stub。stub 与 `_stubs.cj` 手写机制并存，新机制为数据驱动自动注入。
 - **未覆盖的 stdlib 簇（R4 候选）**: MutableMap(7)/MutableList(6)/MutableEntry(5)/AutoCloseable(6)/Entry(3)/IOException(9)/RuntimeException(2)/ArrayDeque(5)/LinkedHashSet(2)/MutableCollection(1)/NoSuchElementException(3) ≈ 50 错误。这些走 map_type 映射（Kotlin MutableList→仓颉 ArrayList 等）而非 stub，或在 stubs.rs 补充新条目。
+
+### 2026-07-07 — RENDER_GAP — interface 方法默认参数未 strip（optional-parameter-in-abstract 行动簇）
+
+- **目标**: 1g full-ksoup (R3) / 1d ksoup-parser (R3)
+- **行动簇**: optional-parameter-in-abstract — Kotlin interface 方法 `fun read(offset: Int = 0)` 有默认参数，仓颉 interface 方法不允许默认参数。1 个 parse error。
+- **错误**: source_reader.cj:8 `func read(bytes: ByteArray, offset!: Int64 = 0, length!: Int64 = bytes.size): Int64` — interface 方法默认参数，cjc 报 `optional parameter cannot be used in abstract function`。
+- **根因**: render_func (line 1068) 已有 open 函数去默认参数的逻辑（`if in_open_class || (is_override && in_open_class)`），但 **render_interface (line 1241) 有独立参数渲染路径，不走 render_func**，interface 方法默认参数没 strip。
+- **修复**: render_interface (line 1257) 加默认参数 strip 逻辑——`p.find(" = ")` 去掉 ` = <default>` 后缀。
+- **层级**: L1 (render_interface +10 行)
+- **测试**: 235_interface_default_param 暂删——翻译器把位置调用 `r.read(0)` render 成命名参数 `r.read(offset: 0)`，但 override 方法用位置参数，导致 `invalid named arguments prefix`。这是另一个 bug 簇（调用点命名参数 vs override 位置参数），不在 R3 范围。Bug 2 修复在 1g 全量验证（source_reader.cj 默认参数被 strip）。
+- **副作用**: strip 默认参数后，调用方失去默认参数支持。Kotlin `r.read(bytes)` 不传 offset/length，仓颉需要补值。这是 Bug 2 的深层难题，R4 候选。
+- **1g 测量**: optional-parameter-in-abstract error 消掉 ✅。
+
+### 2026-07-07 — SOC — CtorParam var/val 和 func 名冲突未检测（redefinition-of-declaration 行动簇）
+
+- **目标**: 1g full-ksoup (R3) / 1d ksoup-parser (R3)
+- **行动簇**: redefinition-of-declaration — Kotlin builder setter `fun escapeMode(escapeMode: EscapeMode)` 参数名/方法名撞成员名。8 个 parse error（7 setter + maxPaddingWidth 被遮蔽后显现）。
+- **错误**: document.cj:190 `func parser(parser: Parser)` 撞 `var parser: Parser`（line 10），cjc 报 `redefinition of declaration 'parser'`。7 个同类（escapeMode/charset/syntax/prettyPrint/outline/indentAmount/maxPaddingWidth）。
+- **根因**: SOC `resolve_var_func_collisions` (engine.rs:108) 只遍历 `members` 的 `Kind::VarDecl`，不检测 `ctor_params` 的 `CtorParam { kind: Var/Val, name: X }`。Kotlin constructor 参数 `var parser: Parser` 存为 CtorParam（在 `Class.ctor_params`），不是 VarDecl 节点。SOC 解决了 26 个 VarDecl 冲突（_outputSettings/_quirksMode 等），但漏了 CtorParam 冲突。
+- **修复**: engine.rs `resolve_var_func_collisions` 末尾加 CtorParam 检测——遍历 `Class.ctor_params`，检测 `CtorParam { kind: Var/Val, name: X }` 是否在 `func_names` 里。冲突则 CtorParam.name 改成 `_X`，全图 NameRef == X 改成 _X（保守名字匹配，CtorParam 无 name_node/dependents）。
+- **层级**: L2 (engine.rs +50 行 CtorParam 检测 + 全图 NameRef 级联)
+- **测试**: 236_ctor_param_func_collision（单文件，验证 SOC 重命名成员声明 + NameRef 级联：`return mode` → `return _mode`）。Phase 0 回归 220/220 single + 35/35 project 全绿 ✅。
+- **1g 测量**: SOC 检测到 23 个 ctor-param 冲突（_escapeMode/_charset/_prettyPrint/_outline/_indentAmount/_maxPaddingWidth/_syntax/_location/_parser/_name/_publicId/_systemId/_pos/_lineNumber/_columnNumber/_nameRange/_valueRange/_start/_end/_preserveTagCase/_preserveAttributeCase/_normalName/_namespace）。8 个 setter redefinition 全部消掉 ✅。
+- **副作用**: setter 方法体 `this.escapeMode = escapeMode` 的 `this.escapeMode` 不是 NameRef（是成员访问属性名），SOC 级联没覆盖，`this.X` 没改成 `this._X`。被其他 redefinition 遮蔽（cjc 报到一定数量就停），修完后会显现 `func can not be assigned`。这是另一个 bug 簇（成员访问 render），R4 候选。
+- **新显现 8 redefinition（R4 起点）**: 6 × `it`（`let it = _also_it`，also lambda 翻译生成 it 和外部作用域冲突）+ 1 × `attributeKey`（`let attributeKey = settings.normalizeAttribute(attributeKey)`，参数名和局部变量名 shadowing）+ 1 × `append`（同 attributeKey 模式）。这是参数名/lambda it shadowing 簇，R4 目标。

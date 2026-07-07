@@ -31,10 +31,10 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1a | ksoup-exception | ksoup | 5 | ✅ | 0 | data class, sealed, enum |
 | 1b | ksoup-safety+io | ksoup | 5 | ✅ | 0 | companion, extension, lambda |
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
-| 1d | ksoup-parser | ksoup | 16 | ⏳ | R2: 待重测 (1g 全量 1598→10, parser 切片 parse 阶段 0 错, 语义层被 parse error 遮蔽) | state machine, when, inline; 重定义为 1g 全量编译中 parser 子包切片(2026-07-06); 测量管线=project 模式; R2 stdlib stub 注入完成 | C:/Codes/kotlin/ksoup |
+| 1d | ksoup-parser | ksoup | 16 | ⏳ | R3: 待重测 (1g 全量 10 error, 8 setter redefinition + 1 optional-param 已消, 新 8 redefinition 显现) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 | 🔒 | - | DSL, delegate, reified |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R3: 10 (project 模式, stdlib stub 注入后) | 全量交叉编译; R2 stdlib-type-surface 簇消掉(148→0); 剩 8 parse error (7 redefinition-of-declaration + 1 optional-param-in-abstract) 遮蔽语义层 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R3: 10 (8 新 redefinition: 6 it-shadowing + attributeKey + append; 2 cjpm 消息) | R2 stdlib 簇消掉(148→0); R3 setter redefinition(8)+optional-param(1)消掉, SOC 检测 23 ctor-param 冲突; 新 8 redefinition(it/attributeKey/append)遮蔽语义层 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 

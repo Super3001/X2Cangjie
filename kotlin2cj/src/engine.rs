@@ -173,6 +173,57 @@ impl Engine {
                     .join(", ")
             );
         }
+
+        // 也检测 CtorParam 的 var/val 是否和 func 名冲突
+        // （constructor 参数 var，如 `class X(var parser: Parser)` + `fun parser(...)`）
+        // CtorParam 不是节点（无 name_node/dependents），需单独处理 + 全图 NameRef 级联
+        let mut ctor_rename_ops: Vec<(usize, String, String)> = Vec::new();
+        for id in 0..n {
+            if let Kind::Class { members, ctor_params, .. } = &self.g.nodes[id].kind {
+                let mut func_names: HashSet<String> = HashSet::new();
+                for &m in members {
+                    if let Kind::Func { name, .. } = &self.g.nodes[m].kind {
+                        func_names.insert(name.clone());
+                    }
+                }
+                for p in ctor_params {
+                    if p.kind != CtorParamKind::Plain && func_names.contains(&p.name) {
+                        let new_name = format!("_{}", p.name);
+                        ctor_rename_ops.push((id, p.name.clone(), new_name));
+                    }
+                }
+            }
+        }
+        for (class_idx, old_name, new_name) in &ctor_rename_ops {
+            if let Kind::Class { ctor_params, .. } = &mut self.g.nodes[*class_idx].kind {
+                for p in ctor_params.iter_mut() {
+                    if p.name == *old_name {
+                        p.name = new_name.clone();
+                    }
+                }
+            }
+            // 级联更新全图 NameRef == old_name 的节点
+            // （CtorParam 无 name_node/dependents，保守用名字匹配；同名的其他类
+            //   NameRef 会被误改，但 ksoup 语料中冲突名均为特定 setter，影响可控）
+            for node_idx in 0..n {
+                if let Kind::NameRef { original: ref_name, .. } = &mut self.g.nodes[node_idx].kind {
+                    if *ref_name == *old_name {
+                        *ref_name = new_name.clone();
+                    }
+                }
+            }
+        }
+        if !ctor_rename_ops.is_empty() {
+            eprintln!(
+                "SOC: resolved {} ctor-param/func name collision(s) ({})",
+                ctor_rename_ops.len(),
+                ctor_rename_ops
+                    .iter()
+                    .map(|(_, _, n)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
     }
 
     // ================================================================

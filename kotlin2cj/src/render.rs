@@ -1063,9 +1063,10 @@ impl Engine {
         let ps: Vec<String> = params.iter().map(|p| self.t(*p)).collect::<Option<_>>()?;
         // Determine open context early — needed to strip defaults from open funcs
         let in_open_class = self.func_in_open_class(id);
-        // Cangjie: open functions cannot have default parameter values.
-        // Strip " = <default>" suffix from params when the function will be open.
-        let ps: Vec<String> = if in_open_class || (is_override && in_open_class) {
+        // Cangjie: open functions AND interface/abstract methods cannot have
+        // default parameter values. Strip " = <default>" suffix from params
+        // when the function will be open or is an interface/abstract method.
+        let ps: Vec<String> = if in_open_class || is_abstract || (is_override && in_open_class) {
             ps.into_iter()
                 .map(|p| {
                     if let Some(eq) = p.find(" = ") {
@@ -1254,6 +1255,18 @@ impl Engine {
             } = self.g.kind(*m)
             {
                 let ps: Vec<String> = params.iter().map(|p| self.t(*p)).collect::<Option<_>>()?;
+                // Cangjie: interface methods cannot have default parameter values.
+                // Strip " = <default>" suffix from params (Kotlin interface 默认参数).
+                let ps: Vec<String> = ps
+                    .into_iter()
+                    .map(|p| {
+                        if let Some(eq) = p.find(" = ") {
+                            p[..eq].to_string()
+                        } else {
+                            p
+                        }
+                    })
+                    .collect();
                 let r = ret
                     .clone()
                     .map(|r| format!(": {}", r))
