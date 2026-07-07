@@ -294,3 +294,15 @@
 - **1g 测量**: SOC 检测到 23 个 ctor-param 冲突（_escapeMode/_charset/_prettyPrint/_outline/_indentAmount/_maxPaddingWidth/_syntax/_location/_parser/_name/_publicId/_systemId/_pos/_lineNumber/_columnNumber/_nameRange/_valueRange/_start/_end/_preserveTagCase/_preserveAttributeCase/_normalName/_namespace）。8 个 setter redefinition 全部消掉 ✅。
 - **副作用**: setter 方法体 `this.escapeMode = escapeMode` 的 `this.escapeMode` 不是 NameRef（是成员访问属性名），SOC 级联没覆盖，`this.X` 没改成 `this._X`。被其他 redefinition 遮蔽（cjc 报到一定数量就停），修完后会显现 `func can not be assigned`。这是另一个 bug 簇（成员访问 render），R4 候选。
 - **新显现 8 redefinition（R4 起点）**: 6 × `it`（`let it = _also_it`，also lambda 翻译生成 it 和外部作用域冲突）+ 1 × `attributeKey`（`let attributeKey = settings.normalizeAttribute(attributeKey)`，参数名和局部变量名 shadowing）+ 1 × `append`（同 attributeKey 模式）。这是参数名/lambda it shadowing 簇，R4 目标。
+
+### 2026-07-07 — PARSER — also lambda `let it = _also_it` alias decl 撞外部作用域 it（it-shadowing 行动簇）
+
+- **目标**: 1g full-ksoup (R4) / 1d ksoup-parser (R4)
+- **行动簇**: it-shadowing — `also` lambda 内联生成 `let it = _also_it` alias decl，当嵌套在另一个 lambda 的 `it` 作用域里时，`it` 重复声明 → redefinition。6 处 parse error。
+- **错误**: ksoup.cj:56 `let it = _also_it`（外部 lambda `{ it => ... }` 的 `it` + IIFE 块体的 `let it`）→ `redefinition of declaration 'it'`。6 处同类（ksoup.cj/node.cj×2/parse_error_list.cj/query_parser.cj/thread_local.cj）。
+- **根因**: `build_also` (parser.rs:2081) 生成 alias decl `let <pname> = _also_<pname>`（line 2106-2120），让 lambda 体的 `it` NameRef 指向 `_also_it`。但 `it` 和外部 lambda 的 `it` 参数冲突。Lambda params 是字符串（`Vec<String>`），不是节点，body 的 `it` NameRef 的 `decl` 是 None，render 用 `original`（`it`）。alias decl 让 `it` 在块体有声明，但和外部 `it` 冲突。
+- **修复**: 去掉 alias decl。新增辅助方法 `rename_namerefs_in_subtree(root, old, new, decl_node)`（parser.rs），递归遍历 body 子树（用 `children_of`），把 `original == pname`（`it`）的 NameRef 改成 `unique`（`_also_it`），`decl` 指向 `nn`（`_also_it` 声明的 Name 节点）。body 的 `it` 引用直接 render 为 `_also_it`，无需 alias decl。
+- **层级**: L2 (parser.rs build_also 重构 -18 行 + 新辅助方法 +25 行)
+- **测试**: 237_also_lambda_it（验证 `also` lambda 内联：body 的 `it` → `_also_it`，无 alias decl）。Phase 0 回归 221/221 single + 35/35 project 全绿 ✅。
+- **1g 测量**: 6 个 `it` redefinition 全部消掉 ✅。新显现 5 个 undeclared type（MutableMap × 2 + MutableList + Entry + AutoCloseable）——之前被 `it` redefinition 遮蔽，现在显现。这是未覆盖 stdlib 簇（R5 候选）。
+- **剩余 8 真 error（R5 起点）**: 3 × redefinition（参数名 shadowing: `let append = append.replace(...)` × 2 + `let attributeKey = settings.normalizeAttribute(attributeKey)` × 1 — Kotlin 允许参数名/局部变量名 shadowing，仓颉不允许）+ 5 × undeclared type（未覆盖 stdlib: MutableMap/MutableList/Entry/AutoCloseable — 走 map_type 映射或 stubs.rs 补充）。

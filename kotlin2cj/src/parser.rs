@@ -1486,6 +1486,29 @@ impl Parser {
         })
     }
 
+    /// 递归遍历 `root` 子树，把所有 `original == old` 的 NameRef 改成 `new`，
+    /// 并把 `decl` 指向 `decl_node`。用于 `also` lambda 内联时把 `it` 重写为
+    /// `_also_it`（避免 alias decl `let it = _also_it` 撞外部作用域 `it`）。
+    fn rename_namerefs_in_subtree(
+        &mut self,
+        root: NodeId,
+        old: &str,
+        new: &str,
+        decl_node: NodeId,
+    ) {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            if let Kind::NameRef { original, decl } = &mut self.g.nodes[id].kind {
+                if *original == old {
+                    *original = new.to_string();
+                    *decl = Some(decl_node);
+                }
+            }
+            let children = self.g.children_of(id);
+            stack.extend(children);
+        }
+    }
+
     fn parse_while(&mut self) -> PResult<NodeId> {
         self.eat_kw("while");
         self.expect_sym("(")?;
@@ -2103,21 +2126,13 @@ impl Parser {
             init: Some(recv),
             is_lazy: false,
         });
-        // Create alias: let <pname> = _also_<pname>
-        let alias_ref = self.g.add(Kind::NameRef {
-            original: unique.clone(),
-            decl: Some(nn),
-        });
-        let alias_nn = self.g.add(Kind::Name {
-            original: pname.clone(),
-        });
-        let alias_decl = self.g.add(Kind::VarDecl {
-            mutable: false,
-            name_node: alias_nn,
-            ty: None,
-            init: Some(alias_ref),
-            is_lazy: false,
-        });
+        // Rename all `<pname>` NameRefs in the lambda body to `unique` (=_also_<pname>).
+        // Avoids `let it = _also_it` alias decl which clashes with outer-scope `it`
+        // (redefinition of declaration 'it' when nested in another lambda's `it` scope).
+        // Body NameRefs for lambda params have decl=None (Lambda params are strings, not
+        // nodes), render via `original` — so rewriting original + pointing decl at nn
+        // makes them resolve to the `let _also_it = recv` decl above.
+        self.rename_namerefs_in_subtree(body, &pname, &unique, nn);
         let ret_ref = self.g.add(Kind::NameRef {
             original: unique,
             decl: Some(nn),
@@ -2125,8 +2140,8 @@ impl Parser {
         let ret_stmt = self.g.add(Kind::Return {
             value: Some(ret_ref),
         });
-        // Merge: let _also_it = recv; let it = _also_it; <body stmts>; return _also_it
-        let mut stmts = vec![decl, alias_decl];
+        // Merge: let _also_it = recv; <body stmts with it→_also_it>; return _also_it
+        let mut stmts = vec![decl];
         if let Kind::Block { stmts: body_stmts } = self.g.kind(body).clone() {
             stmts.extend(body_stmts);
         } else {
