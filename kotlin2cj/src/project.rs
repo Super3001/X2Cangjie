@@ -7,7 +7,7 @@
 //! - 拆分输出到多文件（每个 .kt → 一个 .cj）
 //! - 生成 cjpm.toml 和目录结构
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// 项目转换的结果。
@@ -212,9 +212,44 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
     // 7. 为每个源文件生成 .cj 输出
     let mut files_written = 0usize;
     let mut all_bodies = String::new(); // 汇总代码体，用于 stub 注入检测
+    // 检测 basename 撞名,对撞名的加父目录前缀消歧
+    // (1f 实例: dsl/KoinApplication.kt + core/KoinApplication.kt 都输出 koin_application.cj)
+    let mut basename_count: HashMap<String, usize> = HashMap::new();
+    for (path, _, _) in &file_ranges {
+        let bn = kt_to_cj_filename(path);
+        *basename_count.entry(bn).or_insert(0) += 1;
+    }
     for (fi, item_ids) in file_items.iter().enumerate() {
         let kt_path = &file_ranges[fi].0;
-        let cj_name = kt_to_cj_filename(kt_path);
+        let cj_name = {
+            let bn = kt_to_cj_filename(kt_path);
+            if basename_count.get(&bn).copied().unwrap_or(0) > 1 {
+                // 撞名,加父目录前缀消歧 (父目录名转 snake_case)
+                let parent = kt_path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if !parent.is_empty() {
+                    let mut parent_snake = String::new();
+                    for (i, ch) in parent.chars().enumerate() {
+                        if ch.is_ascii_uppercase() {
+                            if i > 0 {
+                                parent_snake.push('_');
+                            }
+                            parent_snake.push(ch.to_ascii_lowercase());
+                        } else {
+                            parent_snake.push(ch);
+                        }
+                    }
+                    format!("{}_{}", parent_snake, bn)
+                } else {
+                    bn
+                }
+            } else {
+                bn
+            }
+        };
 
         // 渲染该文件的所有声明
         let mut body = String::new();
