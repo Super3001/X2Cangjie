@@ -280,6 +280,19 @@ ELSE:
 3. 跨目标复用强（1g R2 已有规则，1f 扩展到构造器参数分支，反向能加固 1g）
 4. 1g R2 fix-history 备注"构造器参数分支未动（无实例）"——1f 提供实例
 
+### Auto Mode 应用（`/k2cj-optimize --auto N`）
+
+Auto mode 是本策略文件的循环执行：每轮 R 按"层 1 选 target → 层 2 选簇 → 层 2.5 打包 → 层 3 选方法 → 修复 → 回归 → 重新测量 → 自主循环判据"流程跑，循环 N 轮或所有 target 攻克完毕。
+
+Auto mode 下的特殊行为：
+- **不询问用户**：每轮 target/簇/方法选择全自动，按本策略文件打分
+- **回归失败自动回退**：回退到上轮 commit，不询问
+- **L3 触发暂停**：触及核心逻辑重构时必须停，标记人工审查
+- **每轮 checkpoint state**：R 轮结束必须更新 state 文件
+- **fail loud**：每轮 eprintln 当轮有效率 + 累计 token 用量
+
+详细流程见 `SKILL.md` 的 "Auto Mode" 章节。
+
 ---
 
 ## 策略演进规则

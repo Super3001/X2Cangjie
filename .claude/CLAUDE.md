@@ -6,6 +6,7 @@
 - "翻译 ksoup 并修复"
 - "跑优化循环"
 - `/goal "k2cj-optimize target=<name>"`
+- **Auto mode**: `/k2cj-optimize --auto [N]`（默认 N=20 轮，自动锁敌+迭代循环，详见 `.agents/skills/k2cj-optimize/SKILL.md`）
 
 ## 关键规则
 

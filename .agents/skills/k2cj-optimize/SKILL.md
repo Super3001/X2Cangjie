@@ -11,6 +11,97 @@ version: 1.0.0
 - 用户说"优化 kotlin2cj"、"跑优化循环"、"翻译 ksoup 并修复"
 - 定时：建议每 4 小时跑一次 `/goal "kotlin2cj 翻译 <target> 0 compile errors"`
 - 手动：`/goal "k2cj-optimize target=ksoup"`
+- **Auto mode**：`/k2cj-optimize --auto [N]`（默认 N=20）— 启动自动进攻循环
+
+## Auto Mode（自动进攻循环）
+
+`/k2cj-optimize --auto N` 启动一个无人值守的优化循环，按 `autonomous-strategy.md` 三层决策架构自动选择 target / 簇 / 方法，循环 N 轮或直到所有 target 攻克完毕。
+
+### 触发语法
+
+```
+/k2cj-optimize --auto         # 默认 N=20 轮
+/k2cj-optimize --auto 5       # 指定 5 轮
+/k2cj-optimize --auto 0       # 0 = 不限轮数，仅靠"所有 target 攻克"终止（慎用）
+```
+
+### 每轮 R 的流程
+
+```
+┌──────────────────────────────────────────────────────┐
+│  R 轮开始                                             │
+│   1. 读 state/optimization-state.md 获取当前所有      │
+│      target 状态 (✅/⏳/🔒/🟡/❌)                     │
+│   2. 层 1 自动选 target (autonomous-strategy.md)     │
+│      - 优先 in-progress target (避免 context switch) │
+│      - 否则选 🔒 target 中评分最高者                  │
+│   3. 层 2 自动选簇 (P0-P7 优先级 + 量化打分)          │
+│   4. 层 2.5 打包决策 (单簇 vs 多簇打包,5 条 AND)      │
+│   5. 层 3 选方法 (L1/L2/L3 + 修复手段偏好序)         │
+│   6. 执行修复 (Stage 2-6 流水线)                     │
+│      - 翻译 → 编译 → 诊断 → 修复 → 回归              │
+│   7. 重新测量错误数,更新 state 文件                  │
+│   8. 自主循环判据 (autonomous-strategy.md):          │
+│      - 有效率 ≥ 30% 且剩余 > 5 → 继续                │
+│      - 有效率 < 10% 连续 2 轮 → 切换 target          │
+│      - 剩余 < 5 → 当前 target 收尾                   │
+│      - 触及 L3 → 暂停 + 标记人工审查                 │
+│   9. R 轮结束,N -= 1                                 │
+└──────────────┬───────────────────────────────────────┘
+               │
+               ▼
+        N > 0 AND 有未攻克 target?
+        ├─ YES → 回到 R 轮开始
+        └─ NO → 循环结束,出报告
+```
+
+### 终止条件（任一触发即停）
+
+1. **轮数用尽**：已完成 N 轮 R
+2. **所有 target 攻克**：state 中所有 target 状态为 ✅ 收敛，无 🔒/⏳ target
+3. **触 L3 暂停**：某轮触及 L3（核心逻辑重构），标记人工审查
+4. **连续 3 轮无进展**：连续 3 轮有效率 < 10%（边际严重递减）
+5. **Token 预算耗尽**：session 用量逼近 5M（按 Token 预算章节规则 checkpoint 后停）
+
+### 输出报告（循环结束时）
+
+```
+=== k2cj-optimize auto mode 报告 ===
+运行轮数: N (实际完成 X 轮,提前终止原因: ...)
+Token 用量: ~XXXk / 5M
+
+各 target 进展:
+- 1g ksoup-main: R4 → R6 (10 → 4 errors, -60%)
+- 1f koin-core: R1 → R3 (9 → 1 errors, -89%)
+- ...
+
+新增靶向测试: 241/242/243 (3 个)
+译器改动文件: parser.rs (+30), render.rs (+15)
+git commits: abc1234, def5678, ...
+
+下一轮建议:
+- 优先攻 1f R4 (剩 1 parse error, 阻塞带泛型扩展属性)
+- 1g R7 候选: 参数名 shadowing 簇 (3 errors)
+```
+
+### Auto mode 与手动模式的差异
+
+| 维度 | 手动模式 (`/goal target=X`) | Auto mode (`--auto N`) |
+|------|----------------------------|----------------------|
+| target 选择 | 用户指定 | 层 1 自动 |
+| 簇选择 | diagnostician + 用户确认 | 层 2 自动 |
+| 打包决策 | 人工判断 | 层 2.5 自动 (5 条 AND) |
+| 循环判据 | 每轮用户确认继续 | 层自主循环判据自动 |
+| 终止 | 用户停止 | N 轮或所有 target 攻克 |
+| 报告 | 每轮报告 | 循环结束统一报告 |
+| Token 控制 | 每轮可见用量 | 逼近 5M 时 checkpoint 停 |
+
+### Auto mode 的安全机制
+
+- **每轮 checkpoint state**：R 轮结束必须更新 `state/optimization-state.md`，避免崩溃丢失进度
+- **回归即回退**：auto mode 下回归失败自动回退到上轮 commit，不询问用户
+- **L3 触发暂停**：触及核心逻辑重构时**必须停**，标记人工审查（不自动升级）
+- **fail loud**：每轮结束 eprintln 当轮有效率 + 累计 token 用量，不静默超支
 
 ## Token 预算（显式覆盖全局规则）
 
