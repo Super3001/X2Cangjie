@@ -10,3 +10,10 @@ incremental-cache.json
 .build-logs/
 *.bak
 *.lock
+
+# k2cj-optimize 翻译产物 + 临时目录 (auto mode 生成)
+kotlin2cj/output/
+
+# opencode 自动安装的 skills (区别于项目根 .agents/ 工作流知识)
+kotlin2cj/.agents/
+kotlin2cj/skills-lock.json
