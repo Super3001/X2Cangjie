@@ -1452,6 +1452,54 @@ impl Parser {
             }));
         }
         let name = self.expect_ident()?;
+        // 扩展属性 `val ReceiverType.name: T get() = expr` → 转为扩展函数
+        // `extend ReceiverType { func name(): T { return expr } }` 复用 Func Kind
+        // 渲染路径。k2cj 原本只把 ReceiverType 当变量名,遇 `.` 卡住。
+        if self.is_sym(".") {
+            self.bump(); // eat '.'
+            let receiver_type = name;
+            let prop_name = self.expect_ident()?;
+            let ret = if self.eat_sym(":") {
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            // get() = expr / get() { body } / 直接 = expr
+            let body = if self.eat_sym("=") {
+                let e = self.parse_expr()?;
+                let r = self.g.add(Kind::Return { value: Some(e) });
+                self.g.add(Kind::Block { stmts: vec![r] })
+            } else if self.is_kw("get") {
+                self.bump(); // get
+                if self.is_sym("(") {
+                    self.skip_balanced_parens();
+                }
+                if self.eat_sym("=") {
+                    let e = self.parse_expr()?;
+                    let r = self.g.add(Kind::Return { value: Some(e) });
+                    self.g.add(Kind::Block { stmts: vec![r] })
+                } else if self.is_sym("{") {
+                    self.parse_block()?
+                } else {
+                    self.g.add(Kind::Block { stmts: vec![] })
+                }
+            } else {
+                self.g.add(Kind::Block { stmts: vec![] })
+            };
+            // 跳过 set() 等其他访问器
+            self.skip_property_accessors();
+            return Ok(self.g.add(Kind::Func {
+                name: crate::parser::safe_name(&prop_name),
+                params: vec![],
+                ret,
+                body,
+                is_main: false,
+                is_abstract: false,
+                is_override: false,
+                receiver_type: Some(receiver_type),
+                generic_params: vec![],
+            }));
+        }
         let mut ty = None;
         if self.eat_sym(":") {
             ty = Some(self.parse_type()?);
@@ -2377,7 +2425,7 @@ impl Parser {
                     let tuple_param = "__tuple".to_string();
                     let mut names = Vec::new();
                     loop {
-                        let name = self.expect_ident()?;
+        let name = self.expect_ident()?;
                         let nn = self.g.add(Kind::Name {
                             original: name.clone(),
                         });
