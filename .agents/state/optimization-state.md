@@ -33,7 +33,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | R4: 待重测 (1g 全量 10 error, it-shadowing 消掉, 新 5 undeclared type 显现) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
-| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R1: 9 errors (3 <*> + 3 unnamed-named-param + 1 throw-expr + 1 duration-decl) | DSL, delegate, reified; R1 修 3 parse 簇 (inline-mods/generic-typealias/receiver-fn-type), 71/72 文件翻译 | C:/Codes/kotlin/koin |
+| 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
 | 1g | ksoup-main | ksoup | 87 | ⏳ | R4: 10 (3 redefinition 参数名 shadowing + 5 undeclared type 未覆盖 stdlib + 2 cjpm) | R3 setter/optional-param 消掉; R4 it-shadowing 消掉(6处), 新 5 undeclared type 显现(MutableMap/MutableList/Entry/AutoCloseable); 剩 3 redefinition(参数名 shadowing: append×2+attributeKey) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
