@@ -174,6 +174,69 @@ impl Engine {
             );
         }
 
+        // 也检测顶层 Program items 的 var-func 冲突
+        // (如 `const val X = ...` + `fun X(...)` 同名顶层声明,1f CreateDSL.kt 实例)
+        // Class members 检测在 L112-143,顶层 Program items 在此补充
+        let mut top_rename_ops: Vec<(NodeId, String)> = Vec::new();
+        if let Kind::Program { items } = &self.g.nodes[self.g.root].kind.clone() {
+            let mut func_names: HashSet<String> = HashSet::new();
+            let mut var_entries: Vec<(NodeId, String)> = Vec::new();
+            for &item in items {
+                match &self.g.nodes[item].kind {
+                    Kind::Func { name, .. } => {
+                        func_names.insert(name.clone());
+                    }
+                    Kind::VarDecl { name_node, .. } => {
+                        match &self.g.nodes[*name_node].kind {
+                            Kind::Name { original } => {
+                                var_entries.push((*name_node, original.clone()));
+                            }
+                            Kind::NameRef { original, .. } => {
+                                var_entries.push((*name_node, original.clone()));
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for (name_node_id, var_name) in &var_entries {
+                if func_names.contains(var_name) {
+                    let new_name = format!("_{}", var_name);
+                    top_rename_ops.push((*name_node_id, new_name));
+                }
+            }
+        }
+        // 执行重命名 (复用 L146-163 的逻辑)
+        for (name_node_id, new_name) in &top_rename_ops {
+            if let Kind::Name { original } = &mut self.g.nodes[*name_node_id].kind {
+                let old_name = original.clone();
+                *original = new_name.clone();
+                let deps: Vec<NodeId> = self.g.nodes[*name_node_id].dependents.clone();
+                for dep_id in &deps {
+                    if let Kind::NameRef {
+                        original: ref_name, ..
+                    } = &mut self.g.nodes[*dep_id].kind
+                    {
+                        if *ref_name == old_name {
+                            *ref_name = new_name.clone();
+                        }
+                    }
+                }
+            }
+        }
+        if !top_rename_ops.is_empty() {
+            eprintln!(
+                "SOC: resolved {} top-level var-func collision(s) ({})",
+                top_rename_ops.len(),
+                top_rename_ops
+                    .iter()
+                    .map(|(_, n)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
         // 也检测 CtorParam 的 var/val 是否和 func 名冲突
         // （constructor 参数 var，如 `class X(var parser: Parser)` + `fun parser(...)`）
         // CtorParam 不是节点（无 name_node/dependents），需单独处理 + 全图 NameRef 级联
