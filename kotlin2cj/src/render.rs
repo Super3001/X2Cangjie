@@ -1995,9 +1995,15 @@ impl Engine {
             // 需要字段类型标注，推断失败会产出非法的 `let x`（无类型无初始化）。
             Kind::Unary { op, expr } if op == "-" || op == "+" => self.infer_literal_type(*expr),
             // charArrayOf(...) 由 render_call 渲染为 Rune 数组字面量 → Array<Rune>
+            // "...".toCharArray() → Array<Rune> (Kotlin CharArray 映射)
             Kind::Call { callee, .. } => {
                 if let Kind::NameRef { original, .. } = self.g.kind(*callee) {
                     if original == "charArrayOf" {
+                        return Some("Array<Rune>".to_string());
+                    }
+                }
+                if let Kind::Member { name, .. } = self.g.kind(*callee) {
+                    if name == "toCharArray" {
                         return Some("Array<Rune>".to_string());
                     }
                 }

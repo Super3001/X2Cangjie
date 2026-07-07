@@ -163,7 +163,7 @@
 | 246_top_level_var_func_collision | ✅ | ✅ | ✅ |  |
 | 247_fully_qualified_refined | ✅ | ✅ | ✅ |  |
 | 248_typealias_render | ✅ | ✅ | ✅ |  |
-| 249_expect_fun_stub_body | ✅ | ❌ | ❌ | error[0m: body of function 'readFile' is missing |
+| 249_tochararray_infer | ✅ | ❌ | ❌ | error[0m: 'toCharArray' is not a member of struct 'String' |
 | 24_fizzbuzz | ✅ | ✅ | ✅ |  |
 | 25_fib_list | ✅ | ✅ | ✅ |  |
 | 26_bank | ✅ | ✅ | ✅ |  |
