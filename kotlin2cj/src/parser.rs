@@ -563,6 +563,15 @@ impl Parser {
     fn parse_typealias(&mut self) -> PResult<NodeId> {
         self.eat_kw("typealias");
         let name = self.expect_ident()?;
+        // Kotlin 泛型 typealias `typealias X<T> = Target<T>`：跳过 `<T>` 泛型参数
+        // 之前直接 expect_sym("=") 会触发 "期望 '=', 但得到 Sym('<')" PARSE ERROR。
+        // type_aliases 注册表是 name→target_type 映射（无泛型），下游用 `X<Arg>` 时
+        // 由 map_type 兜底处理；这里只需保证 parse 不报错。
+        if self.is_sym("<") {
+            let mut gp: Vec<String> = Vec::new();
+            let mut suf = String::new();
+            self.parse_generic_params(&mut gp, &mut suf);
+        }
         self.expect_sym("=")?;
         self.skip_newlines();
         let ty = self.parse_type()?;
@@ -603,6 +612,14 @@ impl Parser {
                 break;
             } else {
                 if let Tok::Ident(s) = self.peek() {
+                    // Kotlin 泛型修饰符：`reified`（inline fun 类型形参内联标记）、
+                    // `out`/`in`（声明侧方差）。仓颉不支持——直接跳过，不作为参数名 push。
+                    // 这些关键字不会作为参数名出现，跳过是安全的。
+                    let is_generic_mod = matches!(s.as_str(), "reified" | "out" | "in");
+                    if is_generic_mod {
+                        self.bump();
+                        continue;
+                    }
                     if expect_name && depth == 1 {
                         params.push(s.clone());
                         expect_name = false;
@@ -756,7 +773,11 @@ impl Parser {
         while !self.is_sym(")") {
             // 不调用 skip_modifiers()——它会把参数名 `open`、`internal` 等误识别为修饰符。
             // 常规函数参数无修饰符（构造器参数的 val/var 在 parse_class 中单独处理）。
+            // 但 inline 函数的 lambda 参数可带 `noinline`/`crossinline` 修饰符 — 这两个
+            // 关键字不会作为参数名出现（只在 inline 函数 lambda 参数前合法），可安全跳过。
             let is_vararg = self.eat_kw("vararg");
+            self.eat_kw("noinline");
+            self.eat_kw("crossinline");
             let pname = self.expect_ident()?;
             self.expect_sym(":")?;
             let ty = if is_vararg {
@@ -2746,7 +2767,13 @@ impl Parser {
             return Ok(inner);
         }
         // 函数类型 `(A, B) -> R`（仓颉语法一致，可直接映射）。
+        // Kotlin 带接收者的函数类型 `ReceiverType.() -> R` 也走此分支：
+        // 先识别 `Ident.<...>.` 前缀，把 ReceiverType 当作第一个参数。
         if self.is_sym("(") {
+            // 探测 `ReceiverType.()` 模式：当前是 `(` 但前面有未消费的 ReceiverType。
+            // 此分支只在 parse_type_raw 主体被调用、且当前 token 流中已有 ReceiverType
+            // 留待消费时才触发。简化方案：在 L2787 expect_ident 之后处理 `.` —— 见下方
+            // L2789 的循环。这里只处理 `(A, B) -> R` 标准形式。
             self.bump();
             let mut params = Vec::new();
             if !self.is_sym(")") {
@@ -2778,6 +2805,38 @@ impl Parser {
             self.bump(); // eat '.'
             let part = self.expect_ident()?;
             s = format!("{}.{}", s, part);
+        }
+        // Kotlin 带接收者的函数类型 `ReceiverType.() -> R`：当前已读 ReceiverType
+        // （可能带泛型实参 `<...>`），下一个 token 是 `.`，再下一个是 `(`。
+        // 消费 `.`，把 ReceiverType 当作函数类型的第一个参数，转入 `(ReceiverType) -> R` 解析。
+        if self.is_sym(".")
+            && self.pos + 1 < self.toks.len()
+            && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "(")
+        {
+            self.bump(); // eat '.'
+            // 现在应该在 `(`，复用下方函数类型分支逻辑：把 ReceiverType 加入 params
+            self.expect_sym("(")?;
+            let mut params = vec![s.clone()]; // 第一个参数是 ReceiverType
+            if !self.is_sym(")") {
+                loop {
+                    let mut ty = self.parse_type_raw()?;
+                    if self.eat_sym(":") {
+                        ty = self.parse_type_raw()?;
+                    }
+                    params.push(ty);
+                    if !self.eat_sym(",") {
+                        break;
+                    }
+                }
+            }
+            self.expect_sym(")")?;
+            self.expect_sym("->")?;
+            let ret = self.parse_type_raw()?;
+            let mut func_s = format!("({}) -> {}", params.join(", "), ret);
+            if self.eat_sym("?") {
+                func_s = format!("{}?", func_s);
+            }
+            return Ok(func_s);
         }
         if self.eat_sym("<") {
             let mut args = Vec::new();
