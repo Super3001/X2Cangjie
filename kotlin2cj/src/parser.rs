@@ -563,21 +563,29 @@ impl Parser {
     fn parse_typealias(&mut self) -> PResult<NodeId> {
         self.eat_kw("typealias");
         let name = self.expect_ident()?;
+        // 保留泛型参数到 full_name (如 StringMap<V>),render 时检查 < 决定是否注释化
+        // type_aliases 注册表仍用短名 (name) 作 key,下游 X<Arg> 由 map_type 兜底
+        let mut full_name = name.clone();
         // Kotlin 泛型 typealias `typealias X<T> = Target<T>`：跳过 `<T>` 泛型参数
         // 之前直接 expect_sym("=") 会触发 "期望 '=', 但得到 Sym('<')" PARSE ERROR。
-        // type_aliases 注册表是 name→target_type 映射（无泛型），下游用 `X<Arg>` 时
-        // 由 map_type 兜底处理；这里只需保证 parse 不报错。
         if self.is_sym("<") {
             let mut gp: Vec<String> = Vec::new();
             let mut suf = String::new();
             self.parse_generic_params(&mut gp, &mut suf);
+            if !gp.is_empty() {
+                let names: Vec<&str> = gp
+                    .iter()
+                    .map(|g| g.split(" <: ").next().unwrap_or(g))
+                    .collect();
+                full_name = format!("{}<{}>", name, names.join(", "));
+            }
         }
         self.expect_sym("=")?;
         self.skip_newlines();
         let ty = self.parse_type()?;
         self.type_aliases.insert(name.clone(), ty.clone());
         Ok(self.g.add(Kind::TypeAlias {
-            name,
+            name: full_name,
             target_type: ty,
         }))
     }

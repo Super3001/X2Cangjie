@@ -453,8 +453,13 @@ impl Engine {
                 params,
             } => self.render_enum(&name, &entries, &params),
             Kind::TypeAlias { name, target_type } => {
-                // Alias is expanded at parse time (parse_type); keep original as documentation comment
-                Some(format!("// typealias {} = {}", name, target_type))
+                // 仓颉 `type X = Y` 语法 (1f R6: 之前注释化导致类型引用 undeclared)
+                // 泛型 typealias (name 含 `<`) 仓颉可能不支持,仍注释化避免 V 未声明
+                if name.contains('<') {
+                    Some(format!("// typealias {} = {}", name, target_type))
+                } else {
+                    Some(format!("type {} = {}", name, target_type))
+                }
             }
             Kind::TypeCast { expr, ty, safe } => {
                 let e = self.atom(expr)?;
