@@ -638,6 +638,13 @@ impl Engine {
                 let m = if op == "==" { "isNone" } else { "isSome" };
                 return Some(format!("{}.{}()", oa, m));
             }
+            // 可空相等归一（1g Option 战役 R12）：仓颉类无默认 `==`，且 Option<T> 与 T
+            // 混比会类型不匹配。按两侧类别分桶归一。
+            if !lhs_null && !rhs_null {
+                if let Some(res) = self.render_eq_normalized(op, lhs, rhs) {
+                    return Some(res);
+                }
+            }
         }
         let la = self.atom(lhs)?;
         let ra = self.atom(rhs)?;
@@ -681,6 +688,42 @@ impl Engine {
             }
         }
         Some(format!("{} {} {}", la, op, ra))
+    }
+
+    /// 可空/引用相等归一（op 为 `==` 或 `!=`，两侧均非 `None` 字面量）。
+    /// 返回 `None` 表示判不出类别、保持原样（保守，宁残留勿误改语义）。
+    fn render_eq_normalized(&self, op: &str, lhs: NodeId, rhs: NodeId) -> Option<String> {
+        use crate::heuristics::EqCat;
+        // 桶 C（结构相等 `a.equals(b)` 派发）已延后至 R13：仓颉 `equals(other: ?Object)`
+        // 体内 `when(other){is T}` / `other as T` 无法匹配调用点自动装箱的 `Some(arg)`
+        // （arg 被包成 Option<Object> 而非 T），派发会静默返回错误结果。故本轮同类含
+        // equals 的比较一律走桶 A 引用相等（能编译、引用语义），结构相等闭环记入 R13。
+        let (lc, _ln) = self.classify_eq_operand(lhs);
+        let (rc, _rn) = self.classify_eq_operand(rhs);
+        // 桶 A：两侧均为引用类别 → 空安全引用相等 `__k2cjRefEq2(a, b)`。
+        // 仓颉引用类无 `==`；辅助函数自动装箱裸值、透传 Option、跨子类型双泛型消解。
+        if lc == EqCat::Ref && rc == EqCat::Ref {
+            let la = self.atom(lhs)?;
+            let ra = self.atom(rhs)?;
+            return Some(if op == "==" {
+                format!("__k2cjRefEq2({}, {})", la, ra)
+            } else {
+                format!("!__k2cjRefEq2({}, {})", la, ra)
+            });
+        }
+        // 桶 B：两侧均为 Equatable 值类型，且恰一侧可空 → 裸值一侧包 `Some(...)`，
+        // 使 Option<T> == Option<T> 成立（T 为 Equatable）。
+        if lc == EqCat::Equatable && rc == EqCat::Equatable && (_ln ^ _rn) {
+            let la = self.atom(lhs)?;
+            let ra = self.atom(rhs)?;
+            let (lw, rw) = if _ln {
+                (la, format!("Some({})", ra))
+            } else {
+                (format!("Some({})", la), ra)
+            };
+            return Some(format!("{} {} {}", lw, op, rw));
+        }
+        None
     }
 
     // ============ 成员访问 ============
@@ -3217,6 +3260,16 @@ impl Engine {
         _i++
     }
     String(_out)
+}"#;
+            body = format!("{}\n\n{}", helper, body);
+        }
+        if body.contains("__k2cjRefEq2(") {
+            let helper = r#"func __k2cjRefEq2<A, B>(a: ?A, b: ?B): Bool where A <: Object, B <: Object {
+    match ((a, b)) {
+        case (Some(x), Some(y)) => refEq(x, y)
+        case (None, None) => true
+        case _ => false
+    }
 }"#;
             body = format!("{}\n\n{}", helper, body);
         }

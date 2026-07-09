@@ -316,6 +316,20 @@ pub fn convert_project(input_dir: &Path, output_dir: &Path) -> Result<ProjectRes
         return Err("翻译后没有生成任何有效文件".to_string());
     }
 
+    // 7.4 空安全引用相等辅助（1g Option 战役 R12）：仓颉引用类无 `==`。
+    // 泛型顶层函数在同包多文件重复定义会「overload conflicts」（不同于具体签名的
+    // RuneSlice），故只在整包写一次独立文件。双泛型消解跨子类型、自动装箱裸值/透传 Option。
+    if all_bodies.contains("__k2cjRefEq2(") {
+        let helper_file = format!(
+            "package {}\n\nfunc __k2cjRefEq2<A, B>(a: ?A, b: ?B): Bool where A <: Object, B <: Object {{\n    match ((a, b)) {{\n        case (Some(x), Some(y)) => refEq(x, y)\n        case (None, None) => true\n        case _ => false\n    }}\n}}\n",
+            cangjie_pkg
+        );
+        let helper_path = src_dir.join("k2cj_refeq.cj");
+        std::fs::write(&helper_path, &helper_file)
+            .map_err(|e| format!("写入 {} 失败: {}", helper_path.display(), e))?;
+        files_written += 1;
+    }
+
     // 7.5 注入 Kotlin stdlib 类型面 stub（同包共享，写入独立文件避免重复定义）
     if let Some((stub_imports, stub_code)) = crate::stubs::collect_stubs(&all_bodies) {
         let mut stub_file = String::new();

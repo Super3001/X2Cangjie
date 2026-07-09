@@ -619,3 +619,31 @@
   - **桶 D-double**: `??Element` 双 Option（element.cj:920/923 el.tag/el.parent）。
   - **桶 C-ambig**: `let a = obj.field` Member-init 局部, field_type_by_name 跨类同名歧义（html_tree_builder attributes isEmpty/deduplicate、token attributes.size×2）——需按 receiver 静态类精确定位字段（enclosing-class + 继承链解析）。
   - **桶 misc**: tokeniser.cj name/hasAttributes/retrieveNormalName（lastStartTag/EndTag 局部）、tree_builder/html_tree_builder `_stack.remove/clear` 部分残留。
+
+### 2026-07-10 — RENDER+HEURISTICS — auto R12 Option 家族③：==/!= 可空/引用相等归一
+
+- **战役**: auto R12，Option/nullable 第三批「相等归一」。基线 output/target_1g_r11 = 1203。症状 `invalid binary operator '=='/'!='`×76（==×58/!=×18，其中 52 含 Option/This）——仓颉引用类**无默认 `==`**，且 `Option<T>` 与 `T` 混比类型不匹配。
+- **探针先行**（cjc 1.0.5 实证，防臆断）:
+  - `refEq(a,b)` 对类实例做引用相等（子类型 upcast 自动）；`Option<Int64>==Option<Int64>` 成立（Int64 Equatable），但 `Option<Node>==Option<Node>` 失败（Node 非 Equatable）。
+  - 非泛型 `?Object` 辅助**不可行**：Option 不变（`Option<Node>` ✗→ `?Object`）；裸类值可 upcast。
+  - **双泛型** `func __k2cjRefEq2<A,B>(a:?A,b:?B): Bool where A<:Object,B<:Object`（match Some/Some→refEq, None/None→true, _→false）**全通**：裸值自动装箱、Option 透传、A/B 独立消解**跨子类型**（无需公共超类推断）。这是关键设计——单泛型 `<T>` 对 `Node vs Element` 会推断失败。
+- **分桶归一策略**（render.rs::render_eq_normalized，两侧均非 None 字面量时触发）:
+  - **桶 A（Ref，主战果）**: 两侧类别均为引用（普通类/`Object`/`this`）→ `__k2cjRefEq2(a,b)`（`==`）/ `!__k2cjRefEq2(a,b)`（`!=`）。覆盖 `Option<Cls> vs Cls`、`Option<Cls> vs Option<Cls>`、`Cls vs Cls`、`this === other`（词法把 `===` 退化为 `==`，引用语义正确）。
+  - **桶 B（Equatable）**: 两侧均值类型（String/Int64/枚举/value class）且**恰一侧可空** → 裸值一侧包 `Some(...)`，令 `Option<T>==Option<T>` 成立。
+  - **桶 C（结构 equals 派发）**: **延后 R13**——`equals(other:?Object)` 体内 `when(other){is T}` / `other as T` **无法匹配调用点自动装箱的 `Some(arg)`**（arg 被包成 `Option<Object>` 而非 T），派发会静默返回错误结果（探针实测 `p.equals(q)` 结构相等误返 false）。故同类含 equals 的比较本轮**一律走桶 A 引用相等**（能编译、引用语义），结构相等闭环 = R13 首要任务。`class_has_equals`/`same_equals_class` 已实现并 `#[allow(dead_code)]` 保留待 R13。
+  - `x==null`/`x!=null` 仍映 `isNone()`/`isSome()`（既有，未动）。
+- **类别判定**（heuristics.rs，保守「判不出不动」）: `EqCat{Equatable,Ref,Unknown}` + `eq_type_category(base)`（内建值/枚举/value class→Equatable；普通类/Object→Ref；否则 Unknown）+ `classify_eq_operand`（`this`→按外围类；Member 字段→`member_field_type`；`let x=recv.method()` 局部→由 Call/Member 初值返回类型推断——**局部于 classify，不污染全局 expr_type_name**）。防误改护栏：value class（struct，@Derive[Equatable]）与带参枚举（含手写 `==`）归 Equatable 不走 refEq，避免改坏当前可编译的结构相等。
+- **实现关键坑**（首版 net 仅 -5，修正后 -53）: `__k2cjRefEq2` 是**泛型顶层函数**，按 RuneSlice 那样每文件私有注入会「**overload conflicts**」（16 文件重复定义，泛型模板不同于具体签名的 RuneSlice 可容忍）→ 改为**整包写一次**独立文件 `k2cj_refeq.cj`（project.rs），单文件模式（render.rs）仍每文件注入（仅一份不冲突）。
+- **层级**: L2（render.rs 相等归一新分支 + heuristics.rs 分类/成员类型 helper + project.rs 单份辅助注入）
+- **测试**: 262_option_equality（桶 A 引用身份 Option/裸/this===、桶 B Some 包裹、含 equals 类走引用、None==None、isNone/isSome；翻译→cjc→运行 exact-match 18 行）。
+- **测量**:
+  - **1g（主战果）**: 1203 → **1150（-53）**。eq `==`/`!=` **76→22（-54）**，`refEq2` 注入 49 调用点、**0 自致错误**。净 -53≈eq 减量（级联近零）。
+  - **2a（外溢，已标暂停仅记录）**: 963 → **964（+1）**。2a eq 5→2（-3），refEq2 17 调用 0 自致错误；+1 系 -3 eq 修复**下游级联显形**（诚实新表面非 refEq2 缺陷），远低于 +20 停机阈值。
+- **回归**: 单文件 253/253→**254/254** 全绿三阶段（含新 262）。
+- **残留（22 例，均 render 期类型判不出，按「宁残留勿误改」保守留）**:
+  - **javaClass 退化**（~8）: `this.javaClass != other.javaClass` 中 `.javaClass` 被 render 丢弃→lhs 是 Member 节点判 Unknown（equals 样板里的 `This != Option<Object>`×5 等）；**既有误译**（类型反射比较），独立候选。
+  - **集合下标**（~6）: `el == formattingElements[i]` / `children[i] != x[i]`——下标元素类型未推断。
+  - **迭代器/未知返回局部**（~2）: `let node = it.next()`（next 返回类型不在 func_index）。
+  - **R11 under-unwrap 函数值**（~3）: `Int64 != () -> Int64`（方法未加 `()` 调用）——非本桶，R11 残留。
+  - **泛型参**（~1）: `Generics-E == Class-Element`。
+- **R13 首要**: 桶 C 结构相等闭环——需解决 `equals(?Object)` + 调用点 Some 装箱的 when-is/as 匹配缺口（或改 equals 派发为不装箱的直调）。`class_has_equals`/`same_equals_class` 已备。

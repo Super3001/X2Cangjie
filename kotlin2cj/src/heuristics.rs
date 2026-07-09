@@ -8,6 +8,17 @@
 use crate::engine::Engine;
 use crate::node::*;
 
+/// 相等比较中一个操作数的类别（决定 `==`/`!=` 归一策略）。
+/// - `Equatable`：内建值类型 / 枚举 / value class（仓颉已提供 `==`）。
+/// - `Ref`：引用类（class/open/abstract，无 `==` 运算符）或 `Object`/`this`——须走 `refEq`。
+/// - `Unknown`：类型判不出，保守不动。
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub(crate) enum EqCat {
+    Equatable,
+    Ref,
+    Unknown,
+}
+
 impl Engine {
     // ============ 集合类型判定 ============
 
@@ -249,6 +260,175 @@ impl Engine {
     /// 图中是否存在名为 `name` 的类声明。
     pub(crate) fn is_class_name(&self, name: &str) -> bool {
         self.class_index.contains_key(name)
+    }
+
+    /// 类 `name`（或其祖先）是否定义了 `equals` 方法（用于 == 结构相等派发）。
+    /// 保留供 R13 结构相等闭环使用（本轮桶 C 延后，见 render_eq_normalized）。
+    #[allow(dead_code)]
+    pub(crate) fn class_has_equals(&self, name: &str) -> bool {
+        let base = name.split('<').next().unwrap_or(name).trim();
+        if let Some(&cid) = self.class_index.get(base) {
+            return self.class_defines_method(cid, "equals")
+                || self.ancestor_defines_method(cid, "equals");
+        }
+        false
+    }
+
+    /// 将一个（已映射、去 `?` 前缀的）类型基名归类为相等比较类别。
+    /// 枚举 / value class / 内建值类型 → `Equatable`（仓颉已有 `==`）；
+    /// 普通引用类 / `Object` → `Ref`（须 `refEq`）；否则 `Unknown`。
+    pub(crate) fn eq_type_category(&self, base: &str) -> EqCat {
+        let b = base.split('<').next().unwrap_or(base).trim();
+        match b {
+            "String" | "Int64" | "Int32" | "Int16" | "Int8" | "IntNative" | "UInt64"
+            | "UInt32" | "UInt16" | "UInt8" | "UIntNative" | "Bool" | "Rune" | "Float64"
+            | "Float32" | "Float16" | "Char" | "Byte" | "Int" | "Long" | "Unit" => EqCat::Equatable,
+            "Object" | "Any" => EqCat::Ref,
+            _ => {
+                // 枚举（简单枚举 @Derive[Equatable]，带参枚举渲染为含 `==` 的类）→ Equatable。
+                if self.enum_index.contains_key(b) {
+                    return EqCat::Equatable;
+                }
+                if let Some(&cid) = self.class_index.get(b) {
+                    // value class → 仓颉 struct + @Derive[Equatable]（值语义，有 ==）。
+                    if let Kind::Class { is_value, .. } = &self.g.nodes[cid].kind {
+                        if *is_value {
+                            return EqCat::Equatable;
+                        }
+                    }
+                    // 普通引用类：无 `==` 运算符（equals 方法≠operator ==），须 refEq。
+                    return EqCat::Ref;
+                }
+                EqCat::Unknown
+            }
+        }
+    }
+
+    /// 归类相等比较的一个操作数节点：返回（类别, 是否可空）。
+    pub(crate) fn classify_eq_operand(&self, id: NodeId) -> (EqCat, bool) {
+        // `this` 引用：按外围类/枚举类别判定（外围为普通类 → Ref）。
+        if let Kind::NameRef { original, .. } = self.g.kind(id) {
+            if original == "this" || original == "`this`" {
+                if let Some(cls) = self.current_class_name(id) {
+                    return (self.eq_type_category(&cls), false);
+                }
+                return (EqCat::Ref, false);
+            }
+        }
+        let nullable = self.is_nullable_expr(id);
+        if let Some(ty) = self.expr_type_name(id) {
+            let base = ty.trim_start_matches('?');
+            return (self.eq_type_category(base), nullable);
+        }
+        // Member 字段访问 `base.field`：expr_type_name 不解析成员字段类型，
+        // 这里按 base 的类查字段声明类型（覆盖 `a.parent`（`?Node`）等可空引用字段）。
+        if let Kind::Member { base, name, .. } = self.g.kind(id) {
+            if let Some(ty) = self.member_field_type(*base, name) {
+                let b = ty.trim_start_matches('?');
+                return (self.eq_type_category(b), ty.starts_with('?'));
+            }
+        }
+        // 局部变量 `let node = recv.method(...)`：由 Call/Member 初值的返回类型推断
+        // （expr_type_name 的 VarDecl 分支只对构造器/NameRef 初值递归，不含方法调用返回）。
+        if let Kind::NameRef { decl: Some(d), .. } = self.g.kind(id) {
+            if let Some(&decl_id) = self.decl_index.get(d) {
+                if let Kind::VarDecl {
+                    ty: None,
+                    init: Some(i),
+                    ..
+                } = &self.g.nodes[decl_id].kind
+                {
+                    let init = *i;
+                    if matches!(self.g.kind(init), Kind::Call { .. }) {
+                        if let Some(ty) = self.expr_type_name(init) {
+                            let b = ty.trim_start_matches('?');
+                            return (self.eq_type_category(b), ty.starts_with('?'));
+                        }
+                    }
+                    if let Kind::Member { base, name, .. } = self.g.kind(init) {
+                        if let Some(ty) = self.member_field_type(*base, name) {
+                            let b = ty.trim_start_matches('?');
+                            return (self.eq_type_category(b), ty.starts_with('?'));
+                        }
+                    }
+                }
+            }
+        }
+        (EqCat::Unknown, nullable)
+    }
+
+    /// 解析 `base.field` 中 field 的（已映射）声明类型：先查全类构造参数，
+    /// 再查 base 所属类的成员 VarDecl 与构造参数。
+    pub(crate) fn member_field_type(&self, base: NodeId, field: &str) -> Option<String> {
+        if let Some(ty) = self.field_type_by_name(field) {
+            return Some(ty);
+        }
+        let base_ty = self.expr_type_name(base)?;
+        let clean_ty = base_ty.trim_start_matches('?');
+        let clean_ty = clean_ty.split('<').next().unwrap_or(clean_ty).trim();
+        let &cid = self.class_index.get(clean_ty)?;
+        if let Kind::Class {
+            ctor_params,
+            members,
+            ..
+        } = &self.g.nodes[cid].kind
+        {
+            for cp in ctor_params {
+                if cp.name == field || cp.name.trim_matches('`') == field {
+                    return Some(cp.ty.clone());
+                }
+            }
+            for m in members {
+                if let Kind::VarDecl { name_node, ty, .. } = self.g.kind(*m) {
+                    if let Kind::Name { original } = self.g.kind(*name_node) {
+                        if crate::parser::safe_name(original) == field {
+                            if let Some(t) = ty {
+                                return Some(t.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// 从任意节点向上寻找外围 `Kind::Class` 的名字（供 `this` 归类用）。
+    pub(crate) fn current_class_name(&self, id: NodeId) -> Option<String> {
+        let mut cur = Some(id);
+        while let Some(node_id) = cur {
+            if let Kind::Class { name, .. } = self.g.kind(node_id) {
+                return Some(name.clone());
+            }
+            cur = self.g.nodes[node_id].parent;
+        }
+        None
+    }
+
+    /// 若 `lhs`/`rhs` 两侧都解析为同一个「含 equals 方法」的引用类且均非空，
+    /// 返回该类名（用于渲染结构相等 `a.equals(b)`）。任一侧为 `this` 时不适用
+    /// （`this === other` 语义为引用相等，且会导致 equals 体内自递归）。
+    /// 保留供 R13 结构相等闭环使用（本轮桶 C 延后，见 render_eq_normalized）。
+    #[allow(dead_code)]
+    pub(crate) fn same_equals_class(&self, lhs: NodeId, rhs: NodeId) -> Option<String> {
+        for id in [lhs, rhs] {
+            if let Kind::NameRef { original, .. } = self.g.kind(id) {
+                if original == "this" || original == "`this`" {
+                    return None;
+                }
+            }
+            if self.is_nullable_expr(id) {
+                return None;
+            }
+        }
+        let lt = self.expr_type_name(lhs)?;
+        let rt = self.expr_type_name(rhs)?;
+        let lb = lt.trim_start_matches('?').split('<').next()?.trim();
+        let rb = rt.trim_start_matches('?').split('<').next()?.trim();
+        if lb == rb && self.eq_type_category(lb) == EqCat::Ref && self.class_has_equals(lb) {
+            return Some(lb.to_string());
+        }
+        None
     }
 
     /// 判断函数节点是否位于 open 或 abstract 类中（需要 open 修饰符）。
