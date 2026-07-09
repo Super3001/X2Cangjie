@@ -1,9 +1,9 @@
 # kotlin2cj 测试日志
 
-- 用例总数: 237
-- 翻译成功: 237/237
-- 仓颉编译通过: 237/237
-- 运行输出匹配: 237/237
+- 用例总数: 239
+- 翻译成功: 239/239
+- 仓颉编译通过: 239/239
+- 运行输出匹配: 239/239
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
@@ -165,8 +165,10 @@
 | 244_list_delegation | ✅ | ✅ | ✅ |  |
 | 245_fully_qualified_type | ✅ | ✅ | ✅ |  |
 | 245_list_delegation_field | ✅ | ✅ | ✅ |  |
+| 246_list_delegation_overrides | ✅ | ✅ | ✅ |  |
 | 246_top_level_var_func_collision | ✅ | ✅ | ✅ |  |
 | 247_fully_qualified_refined | ✅ | ✅ | ✅ |  |
+| 247_interp_multiline | ✅ | ✅ | ✅ |  |
 | 248_typealias_render | ✅ | ✅ | ✅ |  |
 | 24_fizzbuzz | ✅ | ✅ | ✅ |  |
 | 25_fib_list | ✅ | ✅ | ✅ |  |

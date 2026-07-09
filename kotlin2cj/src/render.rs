@@ -7,6 +7,77 @@ use crate::node::*;
 
 pub(crate) const IND: &str = "    ";
 
+/// 将字符串插值表达式中的换行折叠为单行，使多行块(if-let/when 等)能塞进
+/// 仓颉单行字符串插值 `${...}`。仓颉以换行**或** `;` 分隔语句，故折叠时须保留
+/// 语句边界：多数换行折叠为 `;`，续行处(下一 token 是 else/catch/finally 或前后为
+/// 续行运算符/标点)折叠为空格。行内空白(含单行字符串字面量内容)原样保留。
+/// 若表达式含仓颉多行字符串字面量(`"""`,内含真实换行)则跳过折叠、保留原样并
+/// fail loud(当前渲染层不产出 `"""`，此为防御性保护)。
+fn fold_interp_expr(src: &str) -> String {
+    if !src.contains('\n') && !src.contains('\r') {
+        return src.to_string();
+    }
+    if src.contains("\"\"\"") {
+        // 多行字符串字面量内的换行不可折叠；保持原样(仍会 lex 报错，honest fail)。
+        return src.to_string();
+    }
+    // 续行标点：出现在换行「前」(上一字符)或「后」(下一字符)时，说明该换行只是
+    // 排版折行而非语句边界，折叠成空格而非 `;`。
+    const PREV_CONT: &str = "{([,.?:=+-*/%<>&|!";
+    const NEXT_CONT: &str = ").],?:=+-*/%<>&|!";
+    let chars: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\n' || ch == '\r' {
+            // 吞掉紧随的换行与行首缩进(始终是记号间排版空白)。
+            let mut j = i + 1;
+            while j < chars.len() && matches!(chars[j], '\n' | '\r' | ' ' | '\t') {
+                j += 1;
+            }
+            let prev = out.chars().rev().find(|c| !c.is_whitespace());
+            let next = chars.get(j).copied();
+            let next_is_cont_kw = next_token_is_continuation_kw(&chars, j);
+            let use_semicolon = match (prev, next) {
+                (None, _) | (_, None) => false, // 开头/结尾无需分隔
+                (_, Some(n)) if n == '}' => false, // 块闭合前，空格即可
+                (Some(p), Some(n)) => {
+                    !PREV_CONT.contains(p) && !NEXT_CONT.contains(n) && !next_is_cont_kw
+                }
+            };
+            if !out.is_empty() {
+                if use_semicolon {
+                    out.push(';');
+                    out.push(' ');
+                } else if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            }
+            i = j;
+        } else {
+            out.push(ch);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 折叠点的下一个 token 是否为 else/catch/finally 等续行关键字。
+fn next_token_is_continuation_kw(chars: &[char], start: usize) -> bool {
+    let rest: String = chars[start..].iter().take(8).collect();
+    for kw in ["else", "catch", "finally"] {
+        if rest.starts_with(kw) {
+            let after = rest[kw.len()..].chars().next();
+            // 关键字后须为非标识符字符(边界)，避免误配 elsewhere 之类。
+            if after.map_or(true, |c| !c.is_alphanumeric() && c != '_') {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 impl Engine {
     // ============ 基础工具 ============
 
@@ -203,7 +274,12 @@ impl Engine {
                         TemplatePart::Lit(l) => s.push_str(l),
                         TemplatePart::Expr(e) => {
                             let et = self.t(*e)?;
-                            s.push_str(&format!("${{{}}}", et));
+                            // 仓颉单行字符串插值 `${...}` 不允许换行。插值表达式若渲染出
+                            // 多行块(如 if-let 语句块)，会触发 unterminated string 词法错误。
+                            // 将换行及其后行首缩进折叠为单空格——这些空白始终是词法记号
+                            // 之间的排版缩进(单行字符串字面量不含真实换行)，折叠不改变语义。
+                            let folded = fold_interp_expr(&et);
+                            s.push_str(&format!("${{{}}}", folded));
                         }
                     }
                 }

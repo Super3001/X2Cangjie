@@ -429,3 +429,17 @@
 - **测试**: 246_list_delegation_overrides（委托类 + 用户 override first()/last()/removeIf()，覆盖 seam 1+2）。244/245/242/243/237 抽查 exact-match 通过。
 - **1g 测量**: 1403 → 1355（全量口径，net -48）。override "does not have an overridden function" 43→28（清掉 15 个 Nodes/Elements List 项；余 28 为其他 marker/iterator 类的 equals/hashCode/clone/next/hasNext，非本簇）。nodes.cj 39→33、elements.cj 75→43、parse_error_list 4→4、element.cj 234→232；attributes/tag 等非 List 文件计数不变（无回归）。
 - **已知残留/风险**: ① NodeList 直接实现型（own storage + Boolean-return override 阻抗）需专门处理，R8 候选。② 剩余 28 override 错为其他 marker（MutableIterator next/hasNext、自定义 iterator）+ equals/hashCode/clone，独立簇。③ 父类泛型捕获仅取顶层 Ident（`Base<Map<K,V>>` 退化为 `Base<Map>`）；ksoup 父类泛型简单（Nodes<Element>）不受影响。④ elements.cj 余 43 错为 LinkedHashSet 未声明 / ArrayList 构造 / addAll / 泛型推断等独立问题，非四接缝。
+
+### 2026-07-09 — RENDER_GAP — interpolation-multiline（字符串插值内多行块折叠为单行）
+
+- **目标**: 2a kotlinx-datetime（core/common/src）；R1 基线被 2 文件 4 个 lex 错阻断全部语义诊断。
+- **行动簇**: interpolation-multiline —— `LocalTimeFormat.kt`/`UtcOffsetFormat.kt` 的 `toString` 里 `${x ?: "??"}` / `${y?.let{...} ?: "?"}` 之类 Kotlin 模板表达式，render 后插值段 `${...}` 内塞进**多行** if-let 块（pretty-print 带换行+缩进）。仓颉单行字符串不允许换行 → `unterminated string interpolation` / `unterminated single-line string`，词法层直接崩，挡住下游全部诊断。
+- **根因**: render.rs `Kind::StrTemplate` 分支渲染 `TemplatePart::Expr` 时直接 `${et}` 拼接，`et` 为子表达式已渲染文本，可含换行（多行块）。仓颉以换行**或** `;` 分隔语句——单纯去换行会让相邻语句粘连（`let neg = negValue if(neg)` → parse error）。
+- **修复**（render.rs 单文件，L1）:
+  1. **`Kind::StrTemplate` 分支**（render.rs:~204）: `TemplatePart::Expr` 渲染结果过 `fold_interp_expr()` 再拼入 `${...}`。
+  2. **新增自由函数 `fold_interp_expr`**（render.rs:10，~55 行含辅助 `next_token_is_continuation_kw`）: 把插值表达式内换行+行首缩进折叠为单行。多数换行折成 `;`（保留语句边界），续行处折成空格——续行判据：下一 token 为 `else/catch/finally` 关键字、或换行前/后为续行运算符/标点（`{([,.?:=+-*/%<>&|!` / `).],?:=+-*/%<>&|!`）、或下一字符是 `}`（块闭合）。行内空白（含单行字符串字面量内容）原样保留。含 `"""` 多行字面量则跳过折叠、保原样 fail loud（当前 render 不产 `"""`，防御性）。
+- **cjc 1.0.5 探针**（4 发，锁定分隔符规则）: ① `;` 作语句分隔合法；② 空块首 `{ ;` / 末 `; }` 冗余分号被容忍（`{ "val"; }` 仍产 String 值，不退化 Unit）；③ **`} ; else` 致命**（`expected expression, found else`）——故续行关键字前必须空格；④ `if(let Some..){} ?? d`（即 `?.let{} ?:` 的渲染形）本身是**独立语义 bug**（if-let 产 Unit 不可 `??`），本簇不管，由重译揭示。
+- **层级**: L1（render.rs 单文件，纯 render 层，无 parser/node 改动）
+- **测试**: 247_interp_multiline（`sign(Boolean?)` 嵌套 if 触发 smart-cast `let neg = ...` 多语句块走 `;` 路径；`grade(Int)` 首分支 `val g="A"; g` 多语句块走 `;` 路径）。翻译→cjc 编译→运行→exact-match 全绿（`-end/+end/ end/[A]/[B]/[F]`）。用 if/else 等价形而非裸 `?.let{} ?:`，因后者触发上述独立语义 bug 不可运行。抽查 213/237/244（含 244_list_delegation）exact-match 通过，无回归。
+- **2a 测量**: R1 4 lex 错（`unterminated`）→ R2 **0 lex 错**清零。两 culprit 文件 `toString` 均单行化（local_time_format.cj:97、utc_offset_format.cj:150）。揭示下游 111 parse/语义错（全量），top 簇：generic type name after `<X>`×44、override/static modifiers conflict×29、unexpected modifier override top-level×14、top-level var 未初始化×11、function body missing×6。lex 阻断解除，语义层暴露成功。
+- **已知残留/风险**: ① `?.let{} ?:` → `if-let {} ?? d` 是独立语义 bug（下轮候选，2a 111 错中的一部分）。② 折叠分隔符判据基于字符/关键字启发式，非完整词法分析：极端情形（语句真以续行运算符集内字符结尾、或方法链跨行 `foo\n.bar()`）可能误判分隔符；ksoup/datetime 的插值块为 pretty-print 规整块，实测未触发。③ 只处理插值表达式文本换行，不做语句级提升（L2，本轮不做）。
