@@ -6,7 +6,7 @@
 
 use crate::lexer::{StrPart, Tok, Token};
 use crate::node::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct Parser {
     toks: Vec<Token>,
@@ -20,6 +20,11 @@ pub struct Parser {
     /// 抑制尾随 lambda 解析。解析接口委托表达式（`class C : List<T> by delegate {`）
     /// 时置位，避免把紧随其后的类体 `{...}` 误当作 `delegate { ... }` 的尾随 lambda。
     suppress_trailing_lambda: bool,
+    /// 已发射的 `expect fun` 存根签名（`name(cjType,cjType)`）。Kotlin 多平台
+    /// `expect fun` 无 body 会渲染成无体函数报错；渲染为 throw 存根，并按映射后
+    /// 签名去重——Kotlin 重载 `safeMultiply(Long,Long)`/`(Int,Int)` 在仓颉均折叠为
+    /// `(Int64,Int64)`，两个存根会撞成 redefinition。
+    expect_fn_sigs: HashSet<String>,
 }
 
 type PResult<T> = Result<T, String>;
@@ -34,6 +39,7 @@ impl Parser {
             type_aliases: HashMap::new(),
             file_ranges: None,
             suppress_trailing_lambda: false,
+            expect_fn_sigs: HashSet::new(),
         }
     }
 
@@ -766,6 +772,29 @@ impl Parser {
             }
         } else if self.is_sym("{") {
             body = self.parse_block()?;
+        } else if mods.iter().any(|m| m == "expect") && receiver_type.is_none() {
+            // Kotlin 多平台 `expect fun`（common 侧无 body，actual 在平台目录未纳入
+            // 翻译）——渲染为 throw 存根而非无体函数，让顶层调用点仍可解析。
+            // 存根 throw 类型为 Nothing，兼容任意返回类型。
+            let sigs: Vec<String> = params
+                .iter()
+                .map(|p| match self.g.kind(*p) {
+                    Kind::Param { ty, .. } => ty.clone(),
+                    _ => String::new(),
+                })
+                .collect();
+            let sig_key = format!("{}({})", name, sigs.join(","));
+            if !self.expect_fn_sigs.insert(sig_key) {
+                // 映射后签名重复（如 safeMultiply(Long,Long)/(Int,Int) 均折叠为
+                // (Int64,Int64)）——丢弃重复存根，避免 redefinition。
+                self.pop_scope();
+                return Ok(self.g.add(Kind::Raw(String::new())));
+            }
+            let stub = self.g.add(Kind::Raw(format!(
+                "throw Exception(\"expect stub: {}\")",
+                name
+            )));
+            body = self.g.add(Kind::Block { stmts: vec![stub] });
         } else {
             // 无函数体：抽象/接口方法声明。
             is_abstract = true;
@@ -1044,11 +1073,18 @@ impl Parser {
                     expect_name = depth == 1;
                     self.bump();
                 } else if let Tok::Ident(id) = self.peek().clone() {
-                    if expect_name && depth == 1 {
-                        generics.push(id.clone());
-                        expect_name = false;
+                    // 类/接口级泛型方差修饰符 `in`/`out`（及 inline `reified`）跳过，取真名。
+                    // 与函数级 parse_generic_params 同逻辑；否则 `interface Predicate<in T>`
+                    // 会把 `in` 当作参数名 push、真名 T 被丢，渲染成非法的 `<in>`。
+                    if depth == 1 && matches!(id.as_str(), "in" | "out" | "reified") {
+                        self.bump();
+                    } else {
+                        if expect_name && depth == 1 {
+                            generics.push(id.clone());
+                            expect_name = false;
+                        }
+                        self.bump();
                     }
-                    self.bump();
                 } else {
                     expect_name = false;
                     self.bump();

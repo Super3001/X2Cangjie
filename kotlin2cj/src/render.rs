@@ -1299,7 +1299,12 @@ impl Engine {
         // Determine visibility/open modifiers based on parent class context.
         // override 在全部父类型中都无可匹配成员时剥离（marker stub 接口场景），
         // 避免 cjc "does not have an overridden function in its supertype"。
-        let stripped = is_override && self.override_provably_unmatched(id, name);
+        // 顶层作用域函数（无归属类、非扩展）带 override 是非法的（仓颉 override 仅限
+        // 类/接口成员）——多出现于类体被截断后成员泄漏到顶层、或嵌套/扩展提升场景。
+        // 无条件剥 override，避免 "unexpected modifier 'override' in 'top-level' scope"。
+        let is_top_level = self.owning_class_of(id).is_none();
+        let stripped =
+            is_override && (self.override_provably_unmatched(id, name) || is_top_level);
         let is_override = is_override && !stripped;
         let vis = if is_override && in_open_class {
             "public open override "
@@ -1468,7 +1473,8 @@ impl Engine {
             } else {
                 let mt = self.t(*m)?;
                 if matches!(self.g.kind(*m), Kind::Func { .. }) {
-                    format!("static {}", mt)
+                    // `static` 与 `override` 冲突——静态化成员剥 override。
+                    format!("static {}", strip_modifier(&mt, "override"))
                 } else {
                     mt
                 }
@@ -1719,6 +1725,8 @@ impl Engine {
                 }
                 let mt = self.rename_conflicting_companion_func(name, *m, &mt);
                 let mt_no_open = strip_modifier(&mt, "open");
+                // 静态化：`static` 与 `override` 冲突（仓颉 static 成员无重写语义）——剥 override。
+                let mt_no_open = strip_modifier(&mt_no_open, "override");
                 let static_mt = if mt_no_open.starts_with("func ") {
                     format!("static {}", mt_no_open)
                 } else if mt_no_open.starts_with("public ") {

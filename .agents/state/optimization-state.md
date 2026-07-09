@@ -52,7 +52,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R0: lex 层遮蔽 (2 文件未闭合字符串); 探针 109 全 parse 层 | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; 翻译 53/55; R1 候选簇: ①多行函数类型带命名参数(11 个 PARSE ERROR 之首) ②字符串/插值渲染未闭合(2 文件) ③泛型位关键字泄漏(44) ④modifier 冲突(29+14) |
+| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R2: **18**（R0 lex遮蔽 → R1 揭示111 → R2 修3簇 -93） | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R1 插值多行折叠(lex 4→0); R2 打包清 类级variance(44)/override-static(43)/expect缺body(6); R3 候选: expect-class 分离构造体解析崩溃(结构性, 预计连清 15+: uninit×11+companion×2+孤儿override链) |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -112,6 +112,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **靶向测试**: 241_autocloseable / 242_mutable_list_marker / 243_map_entry_supertype / proj_parserecovery。
 - **回归**: 235/235 single + 36/36 project 全绿。
 - **每错成本注**: 本轮消 47 错 + 修正口径 + 解锁 2a 测量。R2-R4 的"每轮消 6-8 错"成本曲线基于误计口径，同样作废——真实曲线待 R6 起重建。
+
+### Phase 2 — 2a kotlinx-datetime (2026-07-09/10) ⏳ R1-R2 完成 — lex 阻断清零 + 3 parse 簇打包（auto R3-R4/15）
+
+- **R1（interpolation-multiline, lex 层）**: 插值 `${...}` 内渲染出多行 if-let 块 → 仓颉单行字符串 lex 爆炸。render.rs 新增 `fold_interp_expr`（语句折 `;`、续行折空格，4 发 cjc 探针锁定分隔规则）。lex 4→0，揭示 parse 层 111 错。测试 247。
+- **R2（3 簇打包，批量三闸门过，1f R1 先例）**: ① 类级泛型 variance 泄漏 44→0（parse_class 加 in/out/reified 跳过，函数级 1f R1 修过、类级漏网）② override/static 冲突+顶层 override 43→0（render 三处剥离）③ expect 函数缺 body 6→0（throw stub + 映射后签名去重防 redefinition，选 stub 因调用面广）。111 → **18**（-93, 有效率 84%）。测试 248/249/250。
+- **簇 C 查证结论（重要）**: 顶层 var 未初始化 ×11 根因是 **`public expect class YearMonth` + 分离式 constructor body 语法解析崩溃** → 空 class + 构造体成员泄漏顶层。结构性（成员归位重组），R3 攻，预计连清 15+（uninit 11 + companion 2 + 孤儿链）。
+- **回归**: R1 后 239/239+36/36; R2 后 242/242+36/36 全绿。
+- **注**: 产物目录命名偏移——2a R1=target_2a_r2/, R2=target_2a_r3/。
 
 ### Phase 2 — 2a kotlinx-datetime (2026-07-09) ⏳ R0 基线
 
