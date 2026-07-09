@@ -100,6 +100,22 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 ## 历史记录
 
+### 剪枝轮 stub 存量整改 (2026-07-10) — 查证 6 组, 0 退役 / 6 暂封·排期（auto R14/15）
+
+- **性质**: 净负债审计轮, 不追错误数。目标=退役手写 stub 换真实 API 映射。**查证结论: 6 组候选无一有 drop-in std 对应物, 全部维持 stub**——把「🔒 未查证」债转为「⏸ 已查证·有暂封条件」的确定态（去掉 6 条待查 TODO 即进展）。**零译器改动 → 零回归风险**。
+- **证据基线（当前译器新译 1g→target_1g_r14, 1136 err ≈基线 1135）**: 每组 stub 的 marker 在新译 src 中仍活引用（AutoCloseable×3 / MutableList×1 / MutableMap×1 / MutableCollection×1 / Entry+MutableEntry×2 / Reader×13 / StringReader×10 / KClass×16 / MutableIterator×11 / Appendable×8 / Charset×9）——**无死 marker 可直接删**。
+- **逐组查证（文档: cangjie-std/{core,io,reflect,collection}, cangjie-stdx/encoding）**:
+  - **AutoCloseable → std.core `Resource`**: Resource 面=`isClosed(): Bool` + `close()`; stub 面仅 `close()`。实现类 CharacterReader 有 organic `isClosed()`（但非 public/override）, **QueryParser/TokenQueue 无 isClosed()**。映射需给每个 `<: Resource` 缺 isClosed 的类合成 public 默认实现=render 侧 R6-同款成员合成 → **波及大, 排期**（非单轮）。
+  - **MutableList → std.collection.List / MutableMap → Map / MutableCollection → Collection / MutableEntry → (K,V)**: 父类型位 marker（NodeList<:MutableList, IdentityHashMap<:MutableMap, IdentityEntry<:MutableEntry, `values: MutableCollection<V>` 值位）。退役需 R6-同款父类型位成员转发机制（R6-R7 只打通了 `by 委托` 与值位 `MutableList<T>→ArrayList<T>`, 父类型 marker 位未覆盖）→ **波及大, 排期**。
+  - **READER_STUB → std.io StringReader**: 语义面差异过大——(a) ctor: stub `StringReader(s: String)` vs std `StringReader(InputStream/buf)`; (b) `read(): Int64`（-1 EOF）vs std `read(): ?Rune`（None EOF）; (c) stub 有 bulk `read(Array<Rune>, offset!, length!): Int64`（jsoup CharacterReader 唯一读法）std 无此重载。**暂封**, 重审: 仓颉 io 出 char-based -1/EOF Reader 或 bulk read 重载后。
+  - **KCLASS_STUB → std.reflect**: reflect 入口 `ClassTypeInfo.of(instance)` **需实例**, 而 `X::class`→`KClass<X>()` 无实例; 面为 `.name`/`.qualifiedName` 无 `.simpleName`; macOS/enum/tuple 不支持。**暂封**, 重审: 仓颉出类型级（非实例）反射 + simpleName。
+  - **MUTABLE_ITERATOR_STUB → std.collection 迭代器族**: 仓颉 `Iterator<T>` **无 `remove()`**, 无 iterator-based 就地删除概念（`List.remove(at:)` 是集合索引删, 非迭代器删）。**暂封**, 重审: 仓颉出 MutableIterator/removeVia-iterator。（另注: 该 stub 当前在 1g 有 override 返回型不变错, 属 render 侧独立 bug, 不在剪枝范畴。）
+  - **APPENDABLE_STUB → core**: 仓颉 core/collection **无 Appendable 接口**, 仅 StringBuilder 具体类。**暂封**, 重审: 仓颉出 Appendable/CharSink 接口。
+  - **CHARSET_STUB → stdx.encoding**: stdx.encoding 仅 Base64/Hex/URL, **无 Charset/CharsetEncoder/named-charset API**。**暂封**, 重审: 仓颉出 charset API（原登记条件）。
+- **净规则数变化**: 0（stubs.rs 未改, 15271 字节前后不变, git clean）。
+- **回归**: 255/255 单文件全绿; 1g 1136（≈基线 1135, +1 容差内）; 2a 未改译器 → 保持基线 967。
+- **排期建议**: 父类型位 marker 退役（AutoCloseable→Resource + Mutable*→collection）合并为一个「父类型位成员合成/转发」深层特性候选（与 R6 值位委托同源, 复用 override_provably_unmatched 基建）; io/reflect/charset 三组待仓颉 std 补面, 非译器可解。
+
 ### 1g Option 战役第四批 (2026-07-10) — == 结构语义闭环 5/8（auto R13/15）
 
 - **方案 A（equals 体先解包）胜出**（两方案探针均通, A 回归面小）: ① IsCheck 可空感知 `(x.isSome() && x.getOrThrow() is T)` ② TypeCast 可空感知 ③ `::class` 反射比较 → `!(other is EnclosingClass)` ④ 桶 C 空安全 `.equals()` 派发（this 侧不派发防 === 误改+自递归）。
@@ -460,14 +476,16 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 > 每项整改是译器代码改动：须靶向测试 + Phase 0 全量回归护航；查证后确无对应物（秤称为负）
 > 则维持 stub 并记暂封 + 重审条件。裁决按暂封制，无一是墓碑。
 
-| stub（stubs.rs） | 疑似真实对应物 | 查证任务 | 状态/触发 |
+> **R14 剪枝轮查证已过（2026-07-10）**：6 组全部维持 stub。父类型位 marker（AutoCloseable/Mutable*）→排期为「父类型位成员合成/转发」深层特性；io/reflect/charset 三组待仓颉 std 补面。详见历史记录「剪枝轮 stub 存量整改」。
+
+| stub（stubs.rs） | 疑似真实对应物 | 查证结论（R14） | 状态/触发 |
 |------|---------------|---------|----------|
-| READER_STUB (Reader/StringReader) | std.io（cangjie-std/io 文档有 StringReader/StringWriter） | 查证链① io 包，核对语义面（read 返回 0 非 -1 的 EOF 差异） | 🔒 下次剪枝轮 |
-| KCLASS_STUB | std.reflect | 查证链①，KClass 语义面（simpleName 等）是否覆盖 | 🔒 下次剪枝轮 |
-| MUTABLE_ITERATOR_STUB | std.collection 迭代器族 | 查证链①，可变迭代语义（remove）有无对应 | 🔒 下次剪枝轮 |
-| APPENDABLE_STUB | core ToString/StringBuilder 接口族 | 查证链① core | 🔒 下次剪枝轮 |
-| CHARSET_STUB (Charset/CharsetEncoder/Charsets) | stdx.encoding？（不确定，可能确无对应） | 查证链②；无对应则过秤维持 stub，记暂封+重审条件"仓颉出 charset API 后重审" | 🔒 下次剪枝轮 |
-| R5 新增 4 个 marker stub（AutoCloseable/MutableList/MutableMap+MutableCollection/Entry+MutableEntry） | AutoCloseable→std core Resource 接口？；Mutable* → map_type 映射 ArrayList/HashMap（fix-history R2 条已建议） | 查证链①；R5 当时为快速消 undeclared-supertype 走了 marker stub，未过查证门 | 🔒 下次剪枝轮，优先级最高（映射方向已有 fix-history 背书） |
+| READER_STUB (Reader/StringReader) | std.io StringReader | 语义面差异过大：ctor(String vs InputStream) / read():?Rune非Int64/-1 / 无 bulk read(buf,off,len)（jsoup 唯一读法） | ⏸ 暂封，重审：仓颉 io 出 char-based -1/EOF Reader 或 bulk read 重载 |
+| KCLASS_STUB | std.reflect | reflect 需实例（`X::class` 无实例）；`.name` 非 `.simpleName`；macOS/enum/tuple 不支持 | ⏸ 暂封，重审：仓颉出类型级反射+simpleName |
+| MUTABLE_ITERATOR_STUB | std.collection 迭代器族 | 仓颉 Iterator 无 `remove()`，无 iterator-based 就地删除概念 | ⏸ 暂封，重审：仓颉出 MutableIterator |
+| APPENDABLE_STUB | core ToString/StringBuilder 接口族 | 仓颉 core/collection 无 Appendable 接口，仅 StringBuilder 具体类 | ⏸ 暂封，重审：仓颉出 Appendable/CharSink |
+| CHARSET_STUB (Charset/CharsetEncoder/Charsets) | stdx.encoding | stdx.encoding 仅 Base64/Hex/URL，无 Charset/named-charset API（如预判） | ⏸ 暂封，重审：仓颉出 charset API |
+| R5 新增 4 个 marker stub（AutoCloseable/MutableList/MutableMap+MutableCollection/Entry+MutableEntry） | AutoCloseable→std core Resource；Mutable*→std.collection List/Map/Collection | 均活引用（无死 marker）。Resource 需 isClosed()（QueryParser/TokenQueue 缺）；Mutable* 父类型位退役需 R6-同款成员转发 → 波及大 | 📅 排期：合并为「父类型位成员合成/转发」深层特性候选（复用 override_provably_unmatched 基建） |
 
 > 真实包适配器（REGEX_STUB→std.regex、SEQUENCE_STUB→std.collection）与琐碎 alias
 > （BYTE_ARRAY/INT_ARRAY）不在整改列——前者已是"映射优先"的正例，后者维护费≈0。
