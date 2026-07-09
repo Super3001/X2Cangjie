@@ -14,10 +14,13 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
                                 ↑1e 核心收敛    ↑2a datetime R0
 ```
 
-> ⚠️ **指标口径修正（2026-07-09，待会签）**: cjc 默认只打印 8 个错误（"N errors
+> ✅ **指标口径修正（2026-07-09，已会签）**: cjc 默认只打印 8 个错误（"N errors
 > generated, 8 errors printed"）。1g R2-R4 记载的"10 errors"是打印截断误计，R4 真实
 > 错误数 1460。自 R5 起所有测量管线 cjpm.toml 加 `compile-option = "--error-count-limit all"`，
 > 以 "N errors generated" 为唯一口径。方向为改严。1g 语义战役未打完。
+> **会签记录**: 2026-07-09 用户人工批准"同意 --error-count-limit all"。已核实 1g R5
+> (target_1g_r5) 与 2a (target_2a) 测量管线 cjpm.toml 均带该选项。cjpm 自身消息不计
+> 编译错误亦随此口径生效（唯一口径 = "N errors generated"）。
 
 ---
 
@@ -80,7 +83,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 ### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R5 完成 — 指标口径修正 + undeclared-supertype 簇清零
 
-- **⚠️ 指标口径修正（本轮最重要产出）**: R4 编译日志末行 "**1460 errors generated, 8 errors printed**"——cjc 默认 `--error-count-limit 8`。R2-R4 的"10 errors"= 8 个打印错误块 + 2 条 cjpm 消息，是截断误计。R2 的"1598→10 (99.4%)"叙事作废（1598 亦是 errors generated 口径，10 不是）。自 R5 起测量管线统一加 `compile-option = "--error-count-limit all"`。**该口径变更方向为改严，仍待独立复核会签**。
+- **⚠️ 指标口径修正（本轮最重要产出）**: R4 编译日志末行 "**1460 errors generated, 8 errors printed**"——cjc 默认 `--error-count-limit 8`。R2-R4 的"10 errors"= 8 个打印错误块 + 2 条 cjpm 消息，是截断误计。R2 的"1598→10 (99.4%)"叙事作废（1598 亦是 errors generated 口径，10 不是）。自 R5 起测量管线统一加 `compile-option = "--error-count-limit all"`。**该口径变更方向为改严，2026-07-09 已由用户人工会签批准**。
 - **R5 行动簇**: undeclared-supertype — 5 个核心类父类型声明失败（Attribute <: Map.Entry / CharacterReader <: AutoCloseable / NodeList,Nodes,ParseErrorList <: MutableList / IdentityHashMap <: MutableMap）。
 - **R5 译器修复（4 处，详见 fix-history 2026-07-09）**: ① parser 父类型位限定名折叠（Map.Entry→Entry 等）② map_type 泛型位 Entry 系→元组 (K,V)、非泛型位裸名折叠 ③ stubs.rs +4（AutoCloseable/MutableList/MutableMap+MutableCollection/Entry+MutableEntry marker）④ render override 剥离（override_provably_unmatched，父类型全为已知成员集接口且不命中时剥 override；坑: 嵌套类成员先查直接父节点）。
 - **附带修复**: parser 合并翻译错误恢复 depth bug（`depth == 0`→`<= 0`，错误点在嵌套花括号内时原逻辑跳 EOF 丢弃后续全部文件）— 2a 测量被阻断时发现，测试 proj_parserecovery。

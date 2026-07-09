@@ -347,7 +347,7 @@
 
 - **目标**: 1g full-ksoup（R2-R4 测量全部受影响）
 - **发现**: cjc 默认 `--error-count-limit 8`——日志末行 "1460 errors generated, 8 errors printed"。R2-R4 把"打印出的 8 个 error 块 + 2 条 cjpm Error 消息"数成 10。真实错误数 R4 时为 1460。
-- **决策**: 自 R5 起所有 target 测量管线在 cjpm.toml 加 `compile-option = "--error-count-limit all"`，以 "N errors generated" 为唯一口径。方向是把口径改严（数字变难看），与"改口径让数字好看"的风险相反；仍记决策日志待会签。
+- **决策**: 自 R5 起所有 target 测量管线在 cjpm.toml 加 `compile-option = "--error-count-limit all"`，以 "N errors generated" 为唯一口径。方向是把口径改严（数字变难看），与"改口径让数字好看"的风险相反。**2026-07-09 用户人工会签批准**（核实 target_1g_r5 / target_2a 管线均已带该选项）。
 - **教训**: "剩 10 个错" 的收敛叙事全部作废；1g 实际仍有 ~1400 语义错误，语义战役未打完。任何 "X errors printed" 截断输出不得直接当总数。
 
 ### 2026-07-09 — STDLIB_GAP+RENDER — undeclared-supertype 簇（Entry/AutoCloseable/MutableList/MutableMap 父类型声明失败）
