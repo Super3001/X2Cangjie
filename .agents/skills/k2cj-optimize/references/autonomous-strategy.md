@@ -23,7 +23,8 @@
 ┌─────────────────────────────────────────┐
 │  层 3: 方法选择 (L 级别 + 修复手段)      │
 │  - L1 默认 / L2 失败 2 次 / L3 触核心    │
-│  - stub > 关键字跳过 > map_type > SOC   │
+│  - 真实API映射(std>stdx>二方>TPC)        │
+│    > stub兜底 > 关键字跳过 > render > SOC│
 └─────────────────────────────────────────┘
 ```
 
@@ -69,7 +70,7 @@
 | 优先级 | 簇类型 | 理由 | 实战验证 |
 |:--:|------|------|------|
 | P0 | **parse 簇** (阻塞翻译) | 修了才能解锁语义诊断 | 1g R2-R4, 1f R1 |
-| P1 | **stub 簇** (stdlib 类型映射) | 杠杆最大，纯增量 | 1g R2 (99.4%) |
+| P1 | **stdlib 映射/stub 簇** (stdlib 类型面；旧名"stub 簇") | 杠杆最大，纯增量；**先过查证门映射真实 API，四级无对应再 stub** | 1g R2 (99.4%；9 stub 中 2 个本就是真实包适配器) |
 | P2 | **关键字跳过簇** (Kotlin 修饰符) | L1 + 2-3 行，风险最低 | 1f R1 inline-mods |
 | P3 | **map_type 映射簇** | L1，单点修复 | 1g R2 |
 | P4 | **render 规则簇** (中位默认值等) | L1-L2，已有规则扩展 | 1g R2/R3 |
@@ -185,7 +186,7 @@ L3 触发时**不立即暂停、不立即上报人工**，按以下优先级尝�
 ```
 L3 触发 →
 1. 尝试自动降级 (L3 → L2 + 辅助手段)
-   - L3 → L2 + stub 注入 (用 stub 绕过核心改动,1g R2 经验)
+   - L3 → L2 + API 映射/stub 注入 (过查证门:有真实 API 先映射,四级无对应才 stub;1g R2 经验)
    - L3 → L2 + render 规则兜底 (用 render 处理边缘情况)
    - L3 → L2 + heuristic 启发式 (用启发式避免改类型推断)
 2. 降级失败 → 尝试分阶段
@@ -200,13 +201,40 @@ L3 触发 →
 
 ### 修复手段偏好序
 
-1. **stub 注入**（stubs.rs 数据驱动表）— 纯增量，零核心改动
-2. **关键字 eat_kw 跳过**（parse_param_nodes / parse_generic_params）— 2-3 行
-3. **map_type 映射**（parser.rs map_type 函数）— 单点修复
-4. **render 规则扩展**（render.rs 已有 helper 加分支）— 局部改写
-5. **SOC 检测新 pass**（engine.rs）— 新逻辑但不改核心
-6. **parser 重构**（build_also / rename_namerefs_in_subtree）— 高风险
-7. **L3 降级手段**（当 L3 触发时优先尝试）— stub 兜底 / render 兜底 / heuristic / 分阶段拆分
+> 2026-07-09 起按错误家族分列；家族 A 引入 **API-first 查证门**（流程见 external-knowledge.md 3.5，
+> 查证链权威顺序见 knowledge-registry.md）。经济学根据：stub 是**永久负债**（终身跟随仓颉 stdlib
+> 演进 + 语义漂移风险），映射到真实 API 的**维护费≈0**（官方替你演进）——同为"纯增量"，负债
+> 天差地别。查证花 ≤5 次索引读取，省的是终身跟随费。本序是全系统排序的**唯一权威**，
+> diagnostician 风险阶梯与 fixer 修复模式引用本序，不另行定义。
+
+**A. 符号/类型缺失族**（STDLIB_GAP / undeclared 类 RENDER_GAP）——先查证，后动手：
+
+1. **std 真实 API 映射**（map_type / stdlib_map.rs）— 维护费≈0，官方语义，零新依赖
+2. **stdx / 二方库映射**（import + cjpm 依赖声明；查证链 ②③）— 官方扩展/已 1:1 移植，
+   无外部 git 依赖
+3. **TPC 三方库映射**（查证链 ④；cjpm.toml 加 git 依赖）— **面宽时用**：Kotlin 侧用的是
+   整库（OkHttp/protobuf 级别）时，手写 stub 等于重实现一个库，负债无限大，TPC 完胜。
+   风险注记：外部 git 依赖引入**可复现性/版本钉死/cjc 兼容/构建时网络**四个新风险面——
+   须钉分支或 commit、在 state 记 cjc 兼容版本、回归门覆盖依赖解析
+4. **最小 stub 注入**（stubs.rs 数据驱动表）— **查证门四级走完、确认全无对应后的兜底**。
+   面窄簇（1-2 个符号、全语料出现一次）加外部依赖的引入费可能高于最小 stub 的摊销费——
+   过知止之秤裁决，秤的代理指标 = **调用面大小**（涉及类型/方法数）
+
+**B. 语法族**（PARSER_GAP）：
+
+5. **关键字 eat_kw 跳过**（parse_param_nodes / parse_generic_params）— 2-3 行
+6. **render 规则扩展**（render.rs 已有 helper 加分支）— 局部改写
+7. **parser 重构**（build_also / rename_namerefs_in_subtree）— 高风险
+
+**C. 语义/冲突族**（HEURISTIC_GAP / SOC / NODE_GAP）：
+
+8. **SOC 检测新 pass**（engine.rs）— 新逻辑但不改核心
+9. **类型推断核心**（L3，走 L3 降级链：API 映射/stub 兜底 / render 兜底 / heuristic / 分阶段拆分）
+
+> **旧序（2026-07-07 版，废弃保留对照）**：stub 注入 > 关键字跳过 > map_type > render 规则 >
+> SOC pass > parser 重构 > L3 降级。废弃原因：把 stub 排第 1 只看了"改动增量小"，漏记了
+> 永久维护负债；fix-history 2026-07-06 已有"真实包映射优先"事后原则，本次前移为决策时规则
+> （STRATEGY UPDATE 见 fix-history.md 2026-07-09 条）。
 
 ---
 

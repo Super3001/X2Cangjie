@@ -322,3 +322,24 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
     - **延后的真 render gap（R3 可修，本会话避免高风险批量改）**: Exceptions.kt(`cause` 在异常子类链中 shadow 父类成员，1a cause-promotion 需加「父类已是异常类则不提升」守卫)、CharArraySequence.kt(CharSequence 映射不一致: 返回位 String vs 父类型位 interface)、Memory.kt(ByteArray 在 extend-target/构造器位未走 map_type)。
   - **译器改动仍 202/202 + 33/33 回归通过**（仅 translate_1e.py 脚本在末次回归后改动，译器二进制未变）。
 - **R3 候选（真 render gap，皆通用译器改进）**: ① extend on type param（`fun <T,R> T.use()`）② 异常子类 cause 防 shadow ③ CharSequence 映射一致性 ④ ByteArray extend/ctor 位 map_type 覆盖 ⑤ abstract `val` prop → 仓颉 prop（非 `let` 字段，pool 的 capacity）。
+
+---
+
+## 剪枝轮候选（存量 stub 整改，2026-07-09 登记）
+
+> 依据：API-first 策略上线（autonomous-strategy.md 修复手段偏好序 + external-knowledge.md 3.5 查证门）。
+> 存量 stub 中的手写重实现是"退役 stub 换真实 API 映射"的首选剪枝对象（净负债下降最多）。
+> 每项整改是译器代码改动：须靶向测试 + Phase 0 全量回归护航；查证后确无对应物（秤称为负）
+> 则维持 stub 并记暂封 + 重审条件。裁决按暂封制，无一是墓碑。
+
+| stub（stubs.rs） | 疑似真实对应物 | 查证任务 | 状态/触发 |
+|------|---------------|---------|----------|
+| READER_STUB (Reader/StringReader) | std.io（cangjie-std/io 文档有 StringReader/StringWriter） | 查证链① io 包，核对语义面（read 返回 0 非 -1 的 EOF 差异） | 🔒 下次剪枝轮 |
+| KCLASS_STUB | std.reflect | 查证链①，KClass 语义面（simpleName 等）是否覆盖 | 🔒 下次剪枝轮 |
+| MUTABLE_ITERATOR_STUB | std.collection 迭代器族 | 查证链①，可变迭代语义（remove）有无对应 | 🔒 下次剪枝轮 |
+| APPENDABLE_STUB | core ToString/StringBuilder 接口族 | 查证链① core | 🔒 下次剪枝轮 |
+| CHARSET_STUB (Charset/CharsetEncoder/Charsets) | stdx.encoding？（不确定，可能确无对应） | 查证链②；无对应则过秤维持 stub，记暂封+重审条件"仓颉出 charset API 后重审" | 🔒 下次剪枝轮 |
+| R5 新增 4 个 marker stub（AutoCloseable/MutableList/MutableMap+MutableCollection/Entry+MutableEntry） | AutoCloseable→std core Resource 接口？；Mutable* → map_type 映射 ArrayList/HashMap（fix-history R2 条已建议） | 查证链①；R5 当时为快速消 undeclared-supertype 走了 marker stub，未过查证门 | 🔒 下次剪枝轮，优先级最高（映射方向已有 fix-history 背书） |
+
+> 真实包适配器（REGEX_STUB→std.regex、SEQUENCE_STUB→std.collection）与琐碎 alias
+> （BYTE_ARRAY/INT_ARRAY）不在整改列——前者已是"映射优先"的正例，后者维护费≈0。

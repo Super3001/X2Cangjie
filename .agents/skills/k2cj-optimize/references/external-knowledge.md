@@ -14,7 +14,10 @@
 
 > 两者是同一份磁盘内容。历史文档中的 `~/x2cj-skills/` 写法已废弃（该路径在两个环境下均不存在），下文以 `<x2cj-skills>` 指代按环境解析后的实际路径。
 
-## 一、知识源（x2cj-skills + 本仓库 .github/skills 提供）
+> **知识库权威清单见 `knowledge-registry.md`（注册表）**：本文件定义流程（加载顺序、查证门），
+> 注册表定义数据（有哪些库、入口索引、查证链位次）。新增知识库只改注册表，本文件流程不动。
+
+## 一、知识源（x2cj-skills + 本仓库 .github/skills 提供；注册表 kb-self / kb-x2cj 的展开说明）
 
 外部知识按类别四层：
 
@@ -69,7 +72,8 @@
 | `skills/x2cj/rules/docs/java-platform/collection/*.md` | Collection/Map 映射 | — |
 | `skills/x2cj/rules/docs/java-platform/io/*.md` | Stream/Reader/Writer/序列化 | — |
 | `skills/x2cj/rules/docs/java-platform/*.md` | 其余 java-platform 子目录 | — |
-| `skills/x2cj/rules/tpc-dependency-mapping.md` | TPC 依赖映射 | — |
+| `skills/x2cj/rules/tpc-dependency-mapping.md` | **TPC 三方库映射**（~140 行 GitCode Cangjie-TPC 表，附 cjpm.toml 依赖片段）——查证门位次 ④ | — |
+| `skills/x2cj/rules/sdk-dependency-mapping.md` | **二方库映射**（Java 库已 1:1 移植仓颉，无外部 git 依赖）——查证门位次 ③ | — |
 | `skills/x2cj/rules/code-style.md` | 代码风格 | — |
 
 ### 仓颉语言参考
@@ -174,6 +178,32 @@
 4. 再查语言参考（确认语法/API 合法性）
 5. 最后查评估标准（判断"对不对"的依据）
 6. 以上都不确定时，才让 LLM 自行判断
+
+### 3.5 查证门：写 stub / 手写库实现之前必查（API-first）
+
+**任何"注入 stub / 手写实现某库功能"的修复决策之前，必须按注册表查证链走一遍索引级查询，
+并留查证记录。** 查证链位次的权威定义在 `knowledge-registry.md`，当前为：
+
+```
+① cangjie-std/SKILL.md（std 25 包索引，grep 类型/功能名）
+② cangjie-stdx/SKILL.md（扩展库 11 包索引）
+③ <x2cj-skills>/skills/x2cj/rules/sdk-dependency-mapping.md（二方库表）
+④ <x2cj-skills>/skills/x2cj/rules/tpc-dependency-mapping.md（TPC 三方库表）
+⑤ 兜底（仅前四步无命中且怀疑索引不全时）：cangjie-original-docs/index/stdlib.md
+   或 <x2cj-skills>/skills/cangjie-dev/SKILL.md
+```
+
+- **为什么**：stub 是永久负债（终身跟随仓颉 stdlib 演进 + 语义漂移风险），映射到真实 API 的
+  维护费≈0（官方替你演进）。查证花 ≤5 次索引读取，省下的是终身跟随费——这是知止之秤的直接
+  推论。fix-history 2026-07-06 已有事后原则"真实包映射优先（Regex→std.regex），无对应物注入
+  最小 stub"，本门把它前移为决策时规则。
+- **预算纪律**：查证是**索引级**的——grep 入口索引文件，命中再读至多 1 个详情页，
+  **总计 ≤5 次文件读取**。严禁遍历 485 文件的官方镜像目录。
+- **查证记录落两处**：
+  - 诊断时：diagnostician 的簇 JSON 填 `api_check` 字段（见 k2cj-diagnostician.md，
+    STDLIB_GAP / undeclared 类簇必填）
+  - 修复后：fix-history.md 修复条目加一行 `- **查证**: 查①②③④，verdict …`
+    （随修复记录归档，state 只留战役级候选）
 
 ### 不做的事
 

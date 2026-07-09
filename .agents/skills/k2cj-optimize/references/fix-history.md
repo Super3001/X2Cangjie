@@ -372,3 +372,23 @@
 - **层级**: L1
 - **测试**: proj_parserecovery（Choker.kt 含不可解析构造 + Ok.kt/Main.kt 验证后续文件存活）
 - **2a 测量**: 翻译 1 → 53/55 文件。11 个 PARSE ERROR 点（多行函数类型带命名参数为首簇）。编译层: 2 文件 lex 错（未闭合字符串/插值）遮蔽全部；排除后 109 错仍全为 parse 层（44 泛型位关键字泄漏 + 29 modifier 冲突 + 14 unexpected modifier + 10 顶层 var 未初始化）。语义层未揭示 — 2a R1 候选簇。
+
+### 2026-07-09 — STRATEGY UPDATE — API-first：真实包映射优先原则前移为决策时规则
+
+- **变更**: 本文件 2026-07-06 条"stub 设计原则"里的事后总结——"真实包映射优先（Regex→std.regex），
+  无对应物注入最小 stub"——升格为决策时规则，落三件套：
+  1. **修复手段偏好序重构**（autonomous-strategy.md）：按错误家族分列；A 族（符号/类型缺失）内
+     std 映射 > stdx/二方库 > TPC 三方库 > 最小 stub 兜底。旧扁平 7 条序（stub 排第 1）废弃保留对照。
+  2. **查证门**（external-knowledge.md 3.5）：写 stub/手写库前必查查证链①②③④⑤（索引级，
+     ≤5 次读取）；诊断簇 JSON 加 `api_check` 字段（diagnostician），fix-history 条目加"查证"行，
+     新增 stub 未附查证记录不得提交（fixer 约束）。
+  3. **知识库注册表**（knowledge-registry.md，新建）：全部知识库唯一权威清单 + 查证链位次 +
+     接入协议（单文件入口索引/插入位次/重叠仲裁/双环境路径）；新增知识库=加一行，流程不改。
+- **动机**: stub 是永久负债（终身跟随仓颉 stdlib 演进 + 语义漂移），映射维护费≈0——同为"纯增量"，
+  负债量级不同。旧序把 stub 排第 1 只看了改动增量。三方库映射不无条件优于 stub：外部 git 依赖
+  引入可复现性/版本/cjc 兼容/网络四个新风险面，面宽（整库级）完胜、面窄过知止之秤。
+- **存量整改**: 5 个手写重实现 stub（READER/KCLASS/MUTABLE_ITERATOR/APPENDABLE/CHARSET）+
+  R5 4 个 marker stub 登记为剪枝轮候选（state「剪枝轮候选」节），译器代码改动不随本次文档变更。
+- **配套改动**: SKILL.md（API 优先原则 + 经济学三笔 + 外部知识表）、k2cj-fixer.md、
+  k2cj-diagnostician.md（风险阶梯细分：增量式-映射 < 增量式-stub）、kotlin-cangjie-patterns.md、
+  .claude/CLAUDE.md 关键规则。

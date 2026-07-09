@@ -31,7 +31,7 @@
 | `x.indices` | `0..x.size` | L1 | |
 | `x[i]` (List) | `x[i]` | L1 | |
 | `x[i]` (String) | `x.get(i)` 或 `x.toRuneArray()[i]` | L1 | String 不能用下标取 Rune |
-| Kotlin stdlib 类型(Regex/Reader/KClass/Charset 等) | 注入 stub(`k2cj_stubs.cj`) | L2 | stubs.rs 数据驱动表 `StubDef { provides, markers, imports, code }`,project 模式生成独立文件,单文件模式追加到 body 末尾。`defines_type` 守卫避免与用户自定义冲突(R2 stdlib-type-surface 簇修复) |
+| Kotlin stdlib 类型(Regex/Reader/KClass/Charset 等) | **先过查证门映射真实 API**(std.regex 等,map_type/stdlib_map.rs 或 cjpm 依赖),四级无对应才注入 stub(`k2cj_stubs.cj`) | L2 | 查证门见 external-knowledge.md 3.5(①std②stdx③二方④TPC)。stub 侧:stubs.rs 数据驱动表 `StubDef { provides, markers, imports, code }`,project 模式生成独立文件,单文件模式追加到 body 末尾。`defines_type` 守卫避免与用户自定义冲突(R2 stdlib-type-surface 簇修复)。**新 stub 必须在 fix-history 留查证记录** |
 
 ## 数据类模式
 

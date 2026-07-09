@@ -72,7 +72,7 @@ L3（核心逻辑重构）触发时**不立即暂停**，按以下优先级尝�
 ```
 L3 触发 →
 1. 尝试自动降级 (L3 → L2 + 辅助手段)
-   - L3 → L2 + stub 注入 (用 stub 绕过核心改动)
+   - L3 → L2 + API 映射/stub 注入 (过查证门:有真实 API 先映射,四级无对应才 stub 绕过核心改动)
    - L3 → L2 + render 规则兜底 (用 render 处理边缘情况)
    - L3 → L2 + heuristic 启发式 (用启发式避免改类型推断)
 2. 降级失败 → 尝试分阶段
@@ -162,7 +162,13 @@ L3 降级记录 (如有):
 1. **修法明确**：能说清改哪个模块、怎么改、怎么写靶向测试
 2. **风险可控**：改动对已有测试的波及面可预估（增量式 > 局部改写 > 核心逻辑重构）
 
-**可行动 ≠ 最大**。选簇时杠杆（错误数+级联）和风险要一起看：一个 90 错误的簇若要动类型推断核心（如 Option 自动解包），宁可先修 150 错误但纯增量的 stdlib stub 簇。高杠杆高风险的簇不是不修，是排在低风险簇之后、等回归测试面变厚了再修。
+**可行动 ≠ 最大**。选簇时杠杆（错误数+级联）和风险要一起看：一个 90 错误的簇若要动类型推断核心（如 Option 自动解包），宁可先修 150 错误但纯增量的 stdlib 映射/stub 簇。高杠杆高风险的簇不是不修，是排在低风险簇之后、等回归测试面变厚了再修。
+
+**API 优先于 stub（查证门）**：符号/类型缺失族的修复手段按"std 真实 API 映射 > stdx/二方库 >
+TPC 三方库 > 最小 stub 兜底"排序（唯一权威序在 autonomous-strategy.md 修复手段偏好序）。
+写任何 stub / 手写库实现前必过查证门（external-knowledge.md 3.5：索引级 ≤5 次读取，查证链
+权威顺序见 knowledge-registry.md）。WHY：stub 是永久负债，映射维护费≈0——同为纯增量，
+负债量级天差地别。
 
 ### 经济收敛与先兆指标（价格系统）
 
@@ -171,15 +177,22 @@ L3 降级记录 (如有):
   常驻处理的摊销之费（翻译后由 fixer 手工补一次）→ **主动定格**——与 🟡 本质不同：🟡 是"现在
   打不过"，秤称出的是"打赢了也不值"。定格记账 + 重审条件后即计收敛。1g 剩余 10 错的分账示例：
   3 个纠缠 shadowing（挂"待回归面变厚"）+ 5 个长尾 undeclared type（称秤，负值则定格）+
-  2 个 cjpm 消息（指标口径变更，须会签）——分账完毕即"经济收敛"，不必死磕
+  2 个 cjpm 消息（指标口径变更，须会签）——分账完毕即"经济收敛"，不必死磕。
+  **秤上有一项本可为零的维护费**：若真实 API 存在，映射方案的维护费≈0（官方替你演进），stub 则是
+  永久负债——这是查证门（external-knowledge.md 3.5）的经济学依据：查证花 ≤5 次索引读取，
+  省下的是终身跟随费
 - **两个先兆指标**（每轮一除，写进 state，让转移先于撞墙）：
   - **每错成本曲线**：当轮 token ÷ 当轮消灭错误数。1g 实测每轮消错数 R2≈1588 → R3 8 → R4 6，
     断崖式下跌即"山穷之兆"——提示该 target 逼近经济均衡，宜转向高杠杆目标（如剩 1 个 parse error
     的 1f），杠杆完胜刮地皮
   - **规则密度**：新增规则/stub 数 ÷ 当轮消灭错误数。R2 为 9 stub/148 错 ≈ 0.06（泛化极好）；
-    若某轮要 3 条特例 render 规则换 3 个错（≥1），泛化弧线已弯不动，在用特例换绿灯——止或剪枝之时
-- **剪枝轮（收缩算子）**：规则密度劣化时对 render.rs/stubs.rs 跑剪枝——合并特例为通用规则、退役
-  摊销为负的 stub。**简化计为进展**，与进攻轮同权入锁敌评分；以净规则数与净覆盖变化计，防刷分
+    若某轮要 3 条特例 render 规则换 3 个错（≥1），泛化弧线已弯不动，在用特例换绿灯——止或剪枝之时。
+    映射条目与 stub 同计分子，但**负债权重不同**（映射≈0，stub=永久）；密度劣化时先检查
+    是否有 stub 可换真实 API 映射
+- **剪枝轮（收缩算子）**：规则密度劣化时对 render.rs/stubs.rs 跑剪枝——**首选剪枝动作是
+  "退役 stub 换真实 API 映射"**（净负债下降最多），其次合并特例为通用规则、退役摊销为负的
+  stub。**简化计为进展**，与进攻轮同权入锁敌评分；以净规则数与净覆盖变化计，防刷分。
+  存量候选队列见 state「剪枝轮候选（存量 stub 整改）」节
 - **天花板估计（可选件，长战役配）**：抽 ~500 个目标语料的 Kotlin 构造，标"原则上可规则翻译 /
   本质需语义判断"（协程、反射、注解处理器多落后者），得"结构化覆盖上限约 X%"（带日期，仓颉
   stdlib 大版本后重估）。它给零进展定性：ktor（协程重）上零进展 = 贴天花板该停；ksoup（DOM 解析、
@@ -279,7 +292,8 @@ x2cj-skills 路径按 Claude Code 启动环境解析（同一份磁盘内容）�
 
 | 类型 | 位置 | 内容 | 谁加载 |
 |------|------|------|--------|
-| **私有** | `references/autonomous-strategy.md` | 自主选择进攻方向的策略（三层决策架构 + 量化打分） | orchestrator, diagnostician |
+| **私有** | `references/knowledge-registry.md` | **知识库注册表**（全部知识库的唯一权威清单 + 查证链位次 + 接入协议；新增知识库=加一行） | 全部 agent |
+| **私有** | `references/autonomous-strategy.md` | 自主选择进攻方向的策略（三层决策架构 + 量化打分 + 修复手段偏好序唯一权威） | orchestrator, diagnostician |
 | **私有** | `references/kotlin-cangjie-patterns.md` | Kotlin→Cangjie 翻译模式 | diagnostician, fixer |
 | **私有** | `references/fix-history.md` | 历次修复记录 | fixer |
 | **私有** | `references/optimization-goals.md` | 10 项优化目标（G1-G10） | orchestrator |
@@ -289,6 +303,7 @@ x2cj-skills 路径按 Claude Code 启动环境解析（同一份磁盘内容）�
 | **仓颉参考** | `.github/skills/cangjie-stdx|toolchains|original-docs|regulations/` | 扩展库/工具链/官方文档/规范 | 按需 |
 | **外部** | `<x2cj-skills>/skills/x2cj/rules/docs/kotlin/` | Kotlin→Cangjie 规则（31 文件，一级知识源） | diagnostician, fixer |
 | **外部** | `<x2cj-skills>/skills/x2cj/rules/docs/java*/` | Java→Cangjie 已验证规则（补充） | fixer, diagnostician |
+| **外部** | `<x2cj-skills>/skills/x2cj/rules/{sdk,tpc}-dependency-mapping.md` | **二方库/TPC 三方库映射表**（查证门 ③④：写 stub 前必查有无现成库） | diagnostician, fixer |
 | **外部** | `<x2cj-skills>/skills/cangjie-dev/` | 仓颉开发参考（与 `.github/skills/` 重叠，补充用） | fixer, verifier |
 | **外部** | `<x2cj-skills>/skills/x2cj-eval/` | LLM 语义评估（14 子维度） | verifier |
 | 加载顺序和规则详见 `references/external-knowledge.md`。 | | | |

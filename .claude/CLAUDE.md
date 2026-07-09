@@ -16,6 +16,9 @@
 - **State 是唯一真相源** — 读 `state/optimization-state.md` 获取进度，不依赖 context 记忆
 - **回归即回退** — 任何已有测试失败 →必须 回退到能使已有测试全部通过的状态
 - **L1 优先** — 先尝试单文件小改，失败了再升级到 L2/L3 多文件改动
+- **API 优先于 stub** — 写任何 stub/手写库实现前必须过查证门（`external-knowledge.md` 3.5：
+  std→stdx→二方库→TPC 三方库，索引级 ≤5 次读取）；能映射真实 API/现成库就不手写。
+  知识库权威清单以 `.agents/skills/k2cj-optimize/references/knowledge-registry.md` 注册表为准（新增知识库=加一行）
 - **难度梯度** — Stage 0 (⭐ baseline) → 1a exception(5) → 1b safety+io(5) → 1c parser(16) → ... 小步快跑，不在一个目标上过度投资
 
 ## Agent 团队

@@ -20,10 +20,18 @@
 每个簇必须标注：
 
 - **修法明确度**：能否说清改哪个模块、怎么改、怎么写靶向测试。说不清 → 标记 `needs_investigation`，不进本轮队列
-- **风险等级**：`增量式`（加映射/stub/测试，波及面≈0）< `局部改写`（改一个渲染分支）< `核心重构`（动类型推断/解析主干）
+- **风险等级**：`增量式-映射`（加真实 API 映射/测试，波及面≈0 且**维护费≈0**）< `增量式-stub`
+  （注入 stub，波及面≈0 但**永久维护费**：终身跟随 stdlib 演进）< `局部改写`（改一个渲染分支）
+  < `核心重构`（动类型推断/解析主干）。旧口径"增量式"不分映射/stub——两者波及面同级但负债
+  量级不同，排序以 `references/autonomous-strategy.md` 修复手段偏好序（A 族）为唯一权威
 - **杠杆**：直接错误数 + 预估级联（该簇消掉后会连带消失的下游错误）
 
 `fix_priority` 是**按（杠杆/风险）比降序的簇队列**。可行动 ≠ 最大：高杠杆高风险簇（如 Option 自动解包）排在低风险簇（如 stdlib stub）之后，等回归测试面变厚再修。
+
+**`api_check` 字段（STDLIB_GAP / undeclared 类簇必填）**：按查证门（external-knowledge.md 3.5）
+的查证链做索引级查询，记录 `searched`（查了哪些位次）、`verdict`（各标识符命中情况）、
+`decision`（每类标识符 map=映射真实 API / dep=加库依赖 / stub=兜底注入）。这是 fixer 选手段
+的输入——诊断时查一次，修复时不重复查。
 
 ## 输出格式
 
@@ -42,7 +50,12 @@
         "top_identifiers": {"Regex": 35, "KClass": 16, "Reader": 13}
       },
       "fix_direction": "映射到 std.regex 等真实包，无对应物注入最小 stub（沿用 _stubs 机制）",
-      "risk": "增量式",
+      "api_check": {
+        "searched": ["①cangjie-std/SKILL.md", "②cangjie-stdx/SKILL.md", "③sdk-mapping", "④tpc-mapping"],
+        "verdict": "Regex→std.regex 命中①；KClass/Reader 四级无对应",
+        "decision": "Regex=map, KClass/Reader=stub"
+      },
+      "risk": "增量式-映射",
       "test_plan": "tests/cases/22x 每类型一个 .kt/.expected 对"
     }
   ],
@@ -59,8 +72,12 @@
 诊断前**必须先加载**以下知识源：
 
 1. `references/kotlin-cangjie-patterns.md` — 已知翻译模式，用于匹配错误根因
-2. `.github/skills/cangjie-std/SKILL.md` — 仓颉标准库，验证类型/方法名是否合法
+2. `.github/skills/cangjie-std/SKILL.md` — 仓颉标准库，验证类型/方法名是否合法（查证链 ①）
 3. `.github/skills/cangjie-lang-features/SKILL.md` — 仓颉语法特性，判断是否是语言层面的不可能翻译
+4. 填 `api_check` 时按需：`.github/skills/cangjie-stdx/SKILL.md`（②）、
+   `<x2cj-skills>/skills/x2cj/rules/sdk-dependency-mapping.md`（③）、
+   `<x2cj-skills>/skills/x2cj/rules/tpc-dependency-mapping.md`（④）
+   ——知识库权威清单与查证链位次见 `references/knowledge-registry.md`
 
 加载方式：`read_file` 对应的 SKILL.md，查阅后开始分类。
 
