@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R9: **1243**（项目模式管线, stub 去重后完整暴露） | R8 equals/hashCode 剥离外溢(14→0) + R9 translate_1g.py 切项目模式(8 redefinition 清零) + 成员import重限定簇D打穿(-63, lowerCase/normalize 全清); R10 起 Option/nullable 硬簇战役(审计强制项); 余候选: enum-body截断A(~90)/notEmpty E(49)/NodeList直接实现型 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R10: **1234** | Option 战役第一批 over-unwrap 15→0(render ForceUnwrap 补 is_null_check_rebound 门控); 后续批: under-unwrap×79 / ==!=可空归一×49; 余候选: enum-body截断A(~90)/notEmpty E(49) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -93,6 +93,13 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g Option 战役第一批 (2026-07-10) — over-unwrap 子模式清零（auto R10/15）
+
+- **诊断快照（1243 基线四子模式）**: ① over-unwrap 15 ② under-unwrap 79 ③ ==/!= 可空 49 ④ Option-vs-T mismatched（混于 243, L3 不碰）。
+- **选①依据**: 15 处同一机械模式、render 单点、不触推断核心。根因: smart-cast 重绑定块内 `x!!` 仍发 `.getOrThrow()`——成员访问路径早有 `is_null_check_rebound` 门控, ForceUnwrap 分支漏了, 复用 helper 补齐（L1 一行级）。
+- **测量**: 1g 1243→**1234**（15 全清, 6 处被遮蔽下游错误显形——诚实新表面）; 2a 966→**963**（残 5 处 DayOfWeek 枚举 over-unwrap 系另一机制, 独立候选）。
+- **测试**: 260_option_over_unwrap（守卫块/early-return/无守卫三路）。回归 252/252 + 36/36 全绿。
 
 ### 1g + 2a 双目标 (2026-07-10) — R9: stub 去重解锁 1g + 成员 import 重限定机制（auto R9/15）
 

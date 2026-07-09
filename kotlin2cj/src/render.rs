@@ -589,8 +589,11 @@ impl Engine {
                     }
                     return Some(e);
                 }
-                // NameRef: check if the variable itself is nullable
-                if self.is_nullable_expr(expr) {
+                // NameRef: check if the variable itself is nullable.
+                // Skip unwrap for variables rebound inside if-let null-check blocks:
+                // `if (x != null) { ...x!!... }` renders x as the non-Option rebind, so
+                // `x.getOrThrow()` would be over-unwrap (getOrThrow not a member of the class).
+                if self.is_nullable_expr(expr) && !self.is_null_check_rebound(expr) {
                     Some(format!("{}.getOrThrow()", e))
                 } else {
                     Some(e)

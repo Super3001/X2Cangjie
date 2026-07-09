@@ -570,3 +570,22 @@
   - **1g（双杀，主战果）**: 1306 → **1243（-63）**。lowerCase/normalize/normaliseWhitespace undeclared 全清（Normalizer.lowerCase 改写遍布 evaluator/query_parser/safelist 等）。
   - **2a（证伪）**: 963 → 966（**+3，微负**）。2a 的 `undeclared identifier 'Directive'×35` **经查证不是成员 import**——`Directive` 是 `sealed class Directive`（Unicode.kt:245）含嵌套 `DateBased/TimeBased` 等，`Directive.YearMonthBased.Era` 是**嵌套类型限定引用**（嵌套提升后引用未更新），另一根因（下轮候选，挂 engine 嵌套提升注册表）。2a 少数真成员 import（`Duration.Companion.ZERO/isInfinite`）改写正确，但仓颉 Duration 无这些成员 → 由 undeclared 转为 not-a-member（准确揭示 API 缺口，非改写 bug）。
 - **已知残留**: ① 2a Directive 嵌套类型引用（真根因，R10 候选）。② member_imports 全局表按成员名键，跨文件同名成员 import 冲突（罕见，last-wins）。③ 顶层函数 import（`import pkg.func`）不改写（无限定类型），保持原样。
+
+### 2026-07-10 — RENDER — R10 Option 家族①：over-unwrap（null-check-rebound 块内 `!!` 去 getOrThrow）
+
+- **战役**: 1g ksoup Option/nullable 硬簇第一批。R9 基线 output/target_1g_r9 = 1243。四子模式新鲜诊断（防刷审计存证）:
+  - **① over-unwrap（getOrThrow 非成员）**: `'getOrThrow' is not a member of class`×15（本轮攻打）
+  - **② under-unwrap（Option receiver 成员调用）**: `is not a member of enum 'Option<...>'`×79（Element×21/Node×12/String×8/Attributes×7/Tokeniser×7）
+  - **③ 可空相等比较**: `invalid binary operator '=='/'!='`×75 中 49 含 Option（==×58/!=×17）
+  - **④ mismatched Option<T> vs T**: 混于 mismatched types×243（类型推断核心，L3，本轮不碰）
+  - **选 ① 依据**: 边界最清晰（流敏感状态清除，纯 render 层单点），杠杆/风险比最优——15 处同一机械模式，不触类型推断核心。② ③ 需动可空性推断/相等归一，回归面大，留后批。
+- **根因**: Kotlin `if (x != null) { ... x!! ... }` 中 `!=null` 守卫被渲染为 smart-cast 重绑定块 `if (let Some(xValue) <- x) { let x = xValue; ... }`——块内 `x` 已是**非 Option 本地量**。但 `x!!`（ForceUnwrap on NameRef）在 render.rs:593 只查 `is_nullable_expr`（看字段声明类型 `?T` → true）就发 `x.getOrThrow()`，未查是否处于重绑定块。成员访问自动解包路径（render.rs:748）**早已有** `!self.is_null_check_rebound(base)` 门控，但 ForceUnwrap 分支漏了同一门控——两条解包路径只有一条用了 rebound 判定。
+- **修复**（render.rs ForceUnwrap NameRef 分支，L1 单点）: `if self.is_nullable_expr(expr) && !self.is_null_check_rebound(expr)`。复用既有 `is_null_check_rebound`（walk-up 找祖先 If 的 `!=null`/`==null` 守卫 + 非重赋值判定）。
+- **边界正确性**（生成码核验，test 260）: ① `if(x!=null){x!!}` 守卫块内 → `x.name()`（去 getOrThrow ✓）；② early-return `if(x==null)return; x!!`（守卫块是**兄弟**非祖先，walk-up 不经过 If）→ 保留 `x.getOrThrow()`（`x` 确仍 Option ✓）；③ 无守卫 `b!!` → 保留 `b.getOrThrow()`（✓）。
+- **层级**: L1（render.rs 单分支加一个既有 helper 调用）
+- **测试**: 260_option_over_unwrap（守卫块 `!!` + early-return `!!` + 无守卫 `!!` 三路 + `==null`/`!=null` 两向；翻译→cjc→运行 exact-match `empty/none/hello/hello/world`）。
+- **测量**:
+  - **1g（主战果）**: 1243 → **1234（-9）**。`'getOrThrow' is not a member of class`×15 **全清**（attribute×8/node×4/html_tree_builder×3/element×1）；净 -9 因去 getOrThrow 后 6 处下游错误显形（此前该行 getOrThrow 报错遮蔽了后续 typecheck）: `invalid binary operator`+1、`no matching function for operator '()'`+2 等，属诚实新表面非回归。`not a member of class` 123→108（-15）。
+  - **2a（外溢）**: 966 → **963（-3）**，无回归。2a 残 5 处 `getOrThrow' is not a member of enum 'DayOfWeek'` 是**另一子模式**（over-unwrap on 非 Option 枚举值，非 null-check-rebound 场景），本修复正确未触及，独立候选。
+- **回归**: 单文件 251/251→252/252（含新 260）全绿三阶段（译/编/运行）。
+- **残留（下批候选，基于 R10 新分布决策）**: ② under-unwrap 79（最大剩余 Option 簇，需动 `x?.foo()`/可空字段成员调用的解包插入或 Option receiver 判定）；③ ==/!= 可空归一 49（两侧 Option 对齐或生成解包比较）；2a DayOfWeek 枚举 over-unwrap 5（非 null-check 的 getOrThrow-on-enum，独立机制）。
