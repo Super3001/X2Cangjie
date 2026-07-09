@@ -162,8 +162,28 @@ impl Parser {
             self.skip_annotations();
             // 跳过 Kotlin 的 package / import 行（仓颉侧自管导入）。
             if matches!(self.peek(), Tok::Ident(x) if x == "import" || x == "package") {
+                let is_import = matches!(self.peek(), Tok::Ident(x) if x == "import");
+                self.bump(); // import / package
+                // 收集 import 的点分路径段（成员 import 重限定用）。
+                let mut segs: Vec<String> = Vec::new();
+                let mut had_star = false;
+                let mut had_alias = false;
                 while !matches!(self.peek(), Tok::Newline | Tok::Eof) {
+                    match self.peek() {
+                        Tok::Ident(x) => {
+                            if x == "as" {
+                                had_alias = true;
+                            } else if !had_alias {
+                                segs.push(x.clone());
+                            }
+                        }
+                        Tok::Sym(s) if s == "*" => had_star = true,
+                        _ => {}
+                    }
                     self.bump();
+                }
+                if is_import && !had_star && !had_alias {
+                    self.record_member_import(&segs);
                 }
                 self.skip_seps();
                 continue;
@@ -311,6 +331,41 @@ impl Parser {
         } else {
             // 顶层语句（少见）——并入隐式块
             self.parse_statement()
+        }
+    }
+
+    /// 判定 import 路径是否为**成员 import**（`import pkg.Class.member` /
+    /// `import pkg.Class.Companion.member`），是则记入 `member → Class` 重限定表。
+    /// 判据：末段小写开头（成员），其前存在大写开头段（类型，`Companion` 跳过）。
+    /// `import pkg.subpkg.topLevelFunc`（末段前均为小写包名）不记——那是顶层函数导入。
+    fn record_member_import(&mut self, segs: &[String]) {
+        if segs.len() < 2 {
+            return;
+        }
+        let member = &segs[segs.len() - 1];
+        let has_companion = segs.iter().any(|s| s == "Companion");
+        let member_is_lower = member.chars().next().is_some_and(|c| c.is_lowercase());
+        // 成员判定：路径含 `Companion`（无论成员大小写，如 `X.Companion.MAX`），或
+        // 末段小写开头（如 `Normalizer.lowerCase`）。末段大写且无 Companion → 可能是
+        // 嵌套类型 import（`P.C.Inner`），跳过（交嵌套提升机制处理，避免误改写）。
+        if !has_companion && !member_is_lower {
+            return;
+        }
+        // 从倒数第二段起向前找第一个大写开头段作为限定类型（跳过 `Companion`）。
+        let mut qualifier: Option<&String> = None;
+        for seg in segs[..segs.len() - 1].iter().rev() {
+            if seg == "Companion" {
+                continue;
+            }
+            if seg.chars().next().is_some_and(|c| c.is_uppercase()) {
+                qualifier = Some(seg);
+            }
+            break; // 只看紧邻的（跳过 Companion 后）一段——它是包名则非成员 import
+        }
+        if let Some(q) = qualifier {
+            self.g
+                .member_imports
+                .insert(member.clone(), safe_name(q));
         }
     }
 

@@ -142,10 +142,23 @@ impl Engine {
                     return Some(field);
                 }
                 match decl {
+                    // 已解析到本地声明：本地优先，不改写（作用域内定义遮蔽成员 import）。
                     Some(d) => self
                         .t(d)
                         .or_else(|| Some(safe_original)),
-                    None => Some(safe_original),
+                    None => {
+                        // 成员 import 重限定：未解析的裸 `member`（Kotlin `import P.C.member`
+                        // 后裸用）→ 仓颉限定 `C.member`（静态/companion 成员）。
+                        // 本地优先：若 `member` 是所在类的成员/构造参数（隐式 this 引用，
+                        // decl=None 但非导入成员，如 TimeBased 的 `nanoseconds`），不改写。
+                        let key = original.strip_prefix("::").unwrap_or(&original);
+                        if let Some(qual) = self.g.member_imports.get(key) {
+                            if !self.enclosing_class_has_member(id, key) {
+                                return Some(format!("{}.{}", qual, safe_original));
+                            }
+                        }
+                        Some(safe_original)
+                    }
                 }
             }
             Kind::Unary { op, expr } => {
@@ -2275,7 +2288,7 @@ impl Engine {
         }
     }
 
-    fn var_decl_name(&self, id: NodeId) -> Option<String> {
+    pub(crate) fn var_decl_name(&self, id: NodeId) -> Option<String> {
         let Kind::VarDecl { name_node, .. } = self.g.kind(id) else {
             return None;
         };

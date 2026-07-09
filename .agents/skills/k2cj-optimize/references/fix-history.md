@@ -544,3 +544,29 @@
 - **跨目标 1g 复用测量**: 用 R6 译器重译 ksoup（output/target_1g_r8） vs 旧 R7 二进制产物（target_1g_r7）: `override func equals` 7→**0**、`override func hashCode` 7→**0**（14 处全剥）。**但 1g 全量语义数无法本轮测量**——r8 被 8 个 stub typealias redefinition（`type ByteArray/RegexOption/MatchResult/Regex/Appendable`）阻塞在声明阶段。根因: stubs.rs 逐文件注入这些非泛型 typealias，项目模式装配时 3 文件重复定义撞名（io_source_reader*.cj）。此为 **translate_1g 逐文件-stub 去重与 stubs.rs 注入的交互问题，正交于 R6 ①②**（旧 1g-R7 二进制经 k2cj_stubs.cj 去重为单份；当前二进制内联到文件体，装配未去重）——记 1g 战役下轮候选。
 - **已知语义缺口（报告记录）**: equals 剥 override 后，`.equals()` 调用仍被既有规则映射为 `==`，而剥离后的类无 `==` 操作符 → `invalid binary operator '==' on Class-X` 系列（本轮编译错已消 override，但 == 语义未通——属 Option/Equatable 战役，需把 `.equals()`/`==` 统一映射到剥离后的 equals 方法或 @Derive[Equatable]）。
 - **② 语义副作用**: 剥离后 equals/hashCode 是普通方法，Kotlin `==`/HashMap 键行为语义上不再走它们——已知缺口，同上。
+
+### 2026-07-10 — PIPELINE — R9① 1g 切项目模式（stub typealias 装配去重，解除测量阻塞）
+
+- **背景**: R6 报告 target_1g_r8 被 8 个 stub typealias redefinition（`type ByteArray/RegexOption/MatchResult/Regex/Appendable` 在 io_source_reader*.cj 重复）阻塞在声明阶段，1g 语义层无法测量。
+- **根因**: `translate_1g.py` 用**逐文件模式**翻译（历史上为绕过早期 merge-parser bug），单文件模式（render.rs）把 stdlib stub（含非泛型 typealias）注入进**每个文件体**；多个单文件产物装配成一个包时这些 typealias 重复定义撞名。项目模式（project.rs::collect_stubs）本就把所有 stub 汇入**单份 k2cj_stubs.cj**，无此问题。
+- **修复**（output/translate_1g.py，非 Rust）: 逐文件模式的 merge-parser bug 已被 R3-R6 解析器修复（expect class / split_top / object-expr 等）消除——改 translate_1g.py 为**项目模式**（`exe <SRC_dir> -o OUT`，镜像 translate_2a.py），whole-tree 一次翻译，stub 自动去重进 k2cj_stubs.cj 单份。旧逐文件脚本可从 git 历史恢复。
+- **验证**: 项目模式重译 ksoup（88 文件，k2cj_stubs.cj 单份，`type ByteArray` 仅 1 处）；8 stub redefinition **清零**，声明阶段解除阻塞。
+- **2a/1g 测量**: 1g **1355（旧逐文件 r7 基线，已被 stub-dup 阻塞）→ 1306（项目模式 r9，语义层首次完整暴露）**。兑现 R3-R6 跨目标外溢。残 3 个 redefinition（attributeKey/append，Kotlin 重载折叠，语义级不阻塞）。
+- **残留**: 项目模式 vs 逐文件的少数差异（88 vs 87 文件）；逐文件模式若某文件触发 merge bug 可回退（git 有旧脚本）。
+
+### 2026-07-10 — PARSER+RENDER — R9② 成员 import 重限定机制（跨目标：1g 双杀，2a 证伪 Directive）
+
+- **目标**: 1g 簇 D `undeclared identifier`（lowerCase×17/normalize×7/normaliseWhitespace 等）——Kotlin `import pkg.Class.member`（静态/companion 成员导入）后裸用 `member`，翻译器原样跳过 import、裸引用 undeclared。
+- **根因**: parser 完全跳过 import 行（`仓颉侧自管导入`），不追踪成员 import。`import com.fleeksoft.ksoup.internal.Normalizer.lowerCase` 后 `lowerCase(x)` → 裸 `lowerCase` undeclared（应为 `Normalizer.lowerCase(x)`）。
+- **修复**（node.rs + parser.rs + render.rs + heuristics.rs，L2）:
+  1. **node.rs**: `Graph` 加 `member_imports: HashMap<String,String>`（member → 限定类型）。
+  2. **parser.rs**: import-skip 时收集点分路径段；`record_member_import` 判定成员 import——路径含 `Companion`（无论成员大小写，如 `X.Companion.MAX`）或末段小写开头（`Normalizer.lowerCase`）→ 记 `member → 最近的大写开头段`（跳过 Companion）。末段大写且无 Companion（可能嵌套类型 `P.C.Inner`）跳过；末段前无大写段（顶层函数 `pkg.sub.func`）跳过。
+  3. **render.rs**: NameRef 渲染 `decl=None`（未解析）分支，若 `member_imports` 命中**且非外围类成员**，改写为 `C.member`。
+  4. **heuristics.rs**: `enclosing_class_has_member`——向上走父链查 name 是否为外围类的字段/方法/companion 成员/构造参数（本地优先关键）。
+- **本地优先修正**（关键 bug）: 首版仅用 `decl=None` 门控，但**类成员的隐式 this 引用 decl 也是 None**（如 TimeBased 的 `nanoseconds` 构造参数）——`import kotlin.time.Duration.Companion.nanoseconds` 存在时，本地 `nanoseconds` 被误改写成 `Duration.nanoseconds`（2a 回归 +17 `not a member of struct`）。加 `enclosing_class_has_member` 门控后修复。
+- **层级**: L2（4 文件协同）
+- **测试**: 259_member_import（`import X.Companion.CONST` + `import Obj.helper` 裸用 → `X.CONST` / `Obj.helper`，编译+运行 U:hi/42）。
+- **跨目标测量**:
+  - **1g（双杀，主战果）**: 1306 → **1243（-63）**。lowerCase/normalize/normaliseWhitespace undeclared 全清（Normalizer.lowerCase 改写遍布 evaluator/query_parser/safelist 等）。
+  - **2a（证伪）**: 963 → 966（**+3，微负**）。2a 的 `undeclared identifier 'Directive'×35` **经查证不是成员 import**——`Directive` 是 `sealed class Directive`（Unicode.kt:245）含嵌套 `DateBased/TimeBased` 等，`Directive.YearMonthBased.Era` 是**嵌套类型限定引用**（嵌套提升后引用未更新），另一根因（下轮候选，挂 engine 嵌套提升注册表）。2a 少数真成员 import（`Duration.Companion.ZERO/isInfinite`）改写正确，但仓颉 Duration 无这些成员 → 由 undeclared 转为 not-a-member（准确揭示 API 缺口，非改写 bug）。
+- **已知残留**: ① 2a Directive 嵌套类型引用（真根因，R10 候选）。② member_imports 全局表按成员名键，跨文件同名成员 import 冲突（罕见，last-wins）。③ 顶层函数 import（`import pkg.func`）不改写（无限定类型），保持原样。

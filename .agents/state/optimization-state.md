@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R7: **1355** | R6-R7 委托簇打穿(1411→1355): List<T> 真实映射+转发+prop转渲染+override剥离成员集+父类泛型保留; R8 候选: enum-body截断簇A(~90)/静态import簇D(~60)/notEmpty簇E(~49)/NodeList直接实现型 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R9: **1243**（项目模式管线, stub 去重后完整暴露） | R8 equals/hashCode 剥离外溢(14→0) + R9 translate_1g.py 切项目模式(8 redefinition 清零) + 成员import重限定簇D打穿(-63, lowerCase/normalize 全清); R10 起 Option/nullable 硬簇战役(审计强制项); 余候选: enum-body截断A(~90)/notEmpty E(49)/NodeList直接实现型 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -93,6 +93,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g + 2a 双目标 (2026-07-10) — R9: stub 去重解锁 1g + 成员 import 重限定机制（auto R9/15）
+
+- **①**: translate_1g.py 从逐文件切**项目模式**（历史 merge-parser bug 已被 2a R1-R4 修复顺带治愈）——stub typealias 重复注入 8 redefinition 清零，1g 语义层完整暴露 1355→1306。
+- **②**: 成员 import 重限定机制（Graph.member_imports 表 + parser 收集 + render 裸 NameRef 改写 `C.member`）。关键坑: 类成员隐式 this 引用 decl 也是 None，须 `enclosing_class_has_member` 门控（首版 2a +17 回归, 修正后归零）。**1g 簇 D 打穿**: 1306→**1243**（lowerCase/normalize/normaliseWhitespace 全清）。
+- **2a 证伪记录**: Directive×35 非成员 import——是 sealed class 嵌套类型限定引用 `Directive.YearMonthBased.Era` 提升后未更新（挂 engine 嵌套提升注册表, R10 候选）。2a 963→966（+3, 成员 import 改写把 undeclared 转成更准确的 not-a-member: 仓颉 Duration 缺 Companion 成员）。
+- **靶向测试**: 259_member_import。回归 251/251 + 36/36 全绿。
+- **fixer 换代**: 该 fixer context 已 500k+, 本轮退役, R10 起新 fixer。
 
 ### Phase 1 — 1e ktor-io (2026-07-10) ✅ 运行时验证补齐（审计修正 b）
 

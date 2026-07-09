@@ -310,6 +310,39 @@ impl Engine {
     /// 此时保留 `override` 会让 cjc 报 "'override' function does not have
     /// an overridden function in its supertype"（marker stub 接口场景），
     /// 渲染时应剥掉。任一接口来源未知（用户接口等）即保守返回 false。
+    /// 从 `node_id` 向上走父链，判断 `name` 是否为某个外围类的成员（字段/方法/
+    /// companion 成员/构造参数）——用于成员 import 重限定时的本地优先判定：类成员
+    /// 的隐式 `this` 引用 decl=None，但不应被改写成 `ImportedClass.member`。
+    pub(crate) fn enclosing_class_has_member(&self, node_id: NodeId, name: &str) -> bool {
+        let mut cur = node_id;
+        while let Some(p) = self.g.nodes[cur].parent {
+            if let Kind::Class {
+                members,
+                companion_members,
+                ctor_params,
+                ..
+            } = &self.g.nodes[p].kind
+            {
+                let in_members = members
+                    .iter()
+                    .chain(companion_members.iter())
+                    .any(|m| match &self.g.nodes[*m].kind {
+                        Kind::Func { name: fname, .. } => fname == name,
+                        Kind::VarDecl { .. } => self.var_decl_name(*m).as_deref() == Some(name),
+                        _ => false,
+                    });
+                let in_ctor = ctor_params
+                    .iter()
+                    .any(|cp| cp.name == name || cp.name.trim_matches('`') == name);
+                if in_members || in_ctor {
+                    return true;
+                }
+            }
+            cur = p;
+        }
+        false
+    }
+
     /// 查找名为 `name`（可带泛型实参，取 `<` 前基名）的用户 class/interface/object 节点。
     fn find_class_by_name(&self, name: &str) -> Option<NodeId> {
         let base = name.split('<').next().unwrap_or(name).trim();

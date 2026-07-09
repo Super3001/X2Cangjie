@@ -355,6 +355,10 @@ pub struct Node {
 pub struct Graph {
     pub nodes: Vec<Node>,
     pub root: NodeId,
+    /// 成员 import 重限定表：`import P.C.member`（C 为类型/object，member 为静态/
+    /// companion 成员）→ `member` → `C`。渲染时把未解析的裸 `member` 引用改写为
+    /// `C.member`（Kotlin 允许静态成员导入后裸用，仓颉需限定）。
+    pub member_imports: std::collections::HashMap<String, String>,
 }
 
 impl Graph {
@@ -362,6 +366,7 @@ impl Graph {
         Graph {
             nodes: Vec::new(),
             root: 0,
+            member_imports: std::collections::HashMap::new(),
         }
     }
 
