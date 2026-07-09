@@ -310,10 +310,71 @@ impl Engine {
     /// 此时保留 `override` 会让 cjc 报 "'override' function does not have
     /// an overridden function in its supertype"（marker stub 接口场景），
     /// 渲染时应剥掉。任一接口来源未知（用户接口等）即保守返回 false。
+    /// 查找名为 `name`（可带泛型实参，取 `<` 前基名）的用户 class/interface/object 节点。
+    fn find_class_by_name(&self, name: &str) -> Option<NodeId> {
+        let base = name.split('<').next().unwrap_or(name).trim();
+        (0..self.g.nodes.len()).find(|&id| {
+            matches!(&self.g.nodes[id].kind, Kind::Class { name: cname, .. } if cname == base)
+        })
+    }
+
+    /// 类 `cid` 自身成员是否定义了名为 `method` 的函数。
+    fn class_defines_method(&self, cid: NodeId, method: &str) -> bool {
+        if let Kind::Class { members, .. } = &self.g.nodes[cid].kind {
+            return members
+                .iter()
+                .any(|m| matches!(&self.g.nodes[*m].kind, Kind::Func { name, .. } if name == method));
+        }
+        false
+    }
+
+    /// 沿 `cid` 的父类链（不含自身）查找是否有祖先类定义了 `method`（深度上限防环）。
+    fn ancestor_defines_method(&self, cid: NodeId, method: &str) -> bool {
+        let mut cur = cid;
+        for _ in 0..32 {
+            let sup_name = match &self.g.nodes[cur].kind {
+                Kind::Class {
+                    superclass: Some(s),
+                    ..
+                } => s.clone(),
+                _ => return false,
+            };
+            // 外部/stub 父类找不到节点：仓颉 Object 及 stub 均无 equals/hashCode，视为未定义。
+            let Some(sup_id) = self.find_class_by_name(&sup_name) else {
+                return false;
+            };
+            if self.class_defines_method(sup_id, method) {
+                return true;
+            }
+            cur = sup_id;
+        }
+        false
+    }
+
     pub(crate) fn override_provably_unmatched(&self, func_id: NodeId, fn_name: &str) -> bool {
         let Some(cid) = self.owning_class_of(func_id) else {
             return false;
         };
+        // equals/hashCode 特例：Kotlin Any 有 equals/hashCode，仓颉 Object 无——
+        // Kotlin `override fun equals/hashCode` 在仓颉无可 override 的超类型成员。
+        // 当无祖先类、无已实现接口定义该方法时剥 override（保留方法体为普通方法）；
+        // 有祖先/接口定义（用户类链 A→B 场景）则保留 override。toString 不在此列
+        // （仓颉 ToString 接口的 override 合法，由下方接口成员集判定）。
+        if matches!(fn_name, "equals" | "hashCode") {
+            if self.ancestor_defines_method(cid, fn_name) {
+                return false;
+            }
+            if let Kind::Class { interfaces, .. } = &self.g.nodes[cid].kind {
+                for itf in interfaces {
+                    if let Some(iid) = self.find_class_by_name(itf) {
+                        if self.class_defines_method(iid, fn_name) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
         if let Kind::Class {
             superclass,
             interfaces,

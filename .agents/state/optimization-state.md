@@ -52,7 +52,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime (2a) | 43 (剪 serializers 后) | ⏳ | R5: **1070** | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R5 require族真实映射(39→0) + serialization 剪枝(12文件, 重审条件在 translate_2a.py 头注); R6 候选: supertype泛型实参丢失62(单根因疑)/override equals-hashCode 剥离(103部分, 1g 复用)/extend-shadow 60/undeclared id 189 |
+| kotlinx-datetime (2a) | 43 (剪 serializers 后) | ⏳ | R6: **963** | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R6 父接口位泛型实参保留(62→21, 级联曝 missing-abstract×29) + equals/hashCode 剥离(103→21, 1g 跨目标 14→0); R7 候选: undeclared id×189(Directive×35, 疑成员import重限定=1g簇D同根)/undeclared type×155/extend-shadow×60/mismatched×86 |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -134,6 +134,15 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **靶向测试**: 241_autocloseable / 242_mutable_list_marker / 243_map_entry_supertype / proj_parserecovery。
 - **回归**: 235/235 single + 36/36 project 全绿。
 - **每错成本注**: 本轮消 47 错 + 修正口径 + 解锁 2a 测量。R2-R4 的"每轮消 6-8 错"成本曲线基于误计口径，同样作废——真实曲线待 R6 起重建。
+
+### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R6 完成 — 父接口泛型实参 + equals/hashCode 剥离（auto R8/15）
+
+- **簇①**: 父**接口**位丢弃已捕获 type_args（superclass 分支 1g R7 修过, 接口分支漏网）→ `class Instant : Comparable<Instant>` 渲染成裸 Comparable。修复+非泛型 marker 桩排除（首次提交回归 242/243, 加排除后修复——marker 撞 arity 教训）。62→21; 级联曝 missing-abstract×29（raw 遮蔽的接口 conformance 检查放行, 真实语义揭示非回归）。
+- **簇②**: equals/hashCode 无祖先定义时剥 override（heuristics 祖先链查, 深度上限防环; toString 不动）。103→21（equals/hashCode 全清, 残 21 为 copy/createEmpty 等）。**跨目标复用验证: 1g override equals/hashCode 14→0**。
+- **测量**: 1070 → **963**（-107, 10%）。
+- **⚠️ 新发现阻塞（R9 必修）**: 当前译器重译 1g 时 stubs 非泛型 typealias（ByteArray/Regex 等 8 处）在 io_source_reader*.cj 逐文件重复注入、项目装配未去重 → 1g 全量测量被 redefinition 阻塞（target_1g_r8）。正交于本轮改动，属 stubs 注入路径 bug。
+- **已知语义缺口（Option/Equatable 战役队列）**: equals 剥 override 后 `.equals()`→`==` 映射链断裂——== 语义未通, 只消了编译错。
+- **靶向测试**: 257/258。回归 250/250 + 36/36 全绿。产物: 2a R6 = target_2a_r7/。
 
 ### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R5 完成 — require 族映射 + serialization 剪枝（auto R7/15）
 

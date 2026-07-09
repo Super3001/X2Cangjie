@@ -522,3 +522,25 @@
 - **主源文件不受影响**: `LocalDate.kt` 等的 `@Serializable(with=…)` 注解被 parser 跳过（注解丢弃），剪 serializers/ 不破坏它们。**残留（报告不处理）**: 主源 `TimeZone.kt:173/273` 在**非注解位**写了 `kotlinx.serialization.KSerializer<T>` 工厂返回类型 → `time_zone.cj:20/46` 2 处残留 undeclared KSerializer，同属该边界，out of scope。
 - **2a 测量（R5 1237 → R6）**: 剪枝 12 文件（55→43 .kt，输出 42 .cj，0 serializer .cj 泄漏）+ require 映射，合计 **1237 → 1070（net -167）**。清零 require×39 + KSerializer 族 ×91 + 12 serializer 文件的全部级联错误。
 - **R6 语义层残余 top 簇**（下轮候选）: undeclared identifier×189（Directive×35/parse×12/it×9/NoSuchElementException×6/Random×6）、undeclared type×153（AssignableField×10/Companion×10/DateTimePeriod×8/LongProgression×8/Copyable×6）、override 无 supertype×103（equals×20/hashCode×20/formatter×13/parser×13）、mismatched types×85、not a member of class×68（Object×38）、generic type 缺实参×62、extend-shadow×60（extend Instant×40/minus×20/plus×16）、ambiguous match×53（plus×33）、invalid binary operator×43、no matching ctor×32、used-before-init×22、enum pattern×19。热点文件 instant/deprecated_instant/*_range/utc_offset_format/number_consumer。
+
+### 2026-07-10 — PARSER — 2a R6① 父接口位泛型实参保留（interface/父类型位漏网）
+
+- **目标**: 2a kotlinx-datetime；R6 基线 output/target_2a_r6 = 1070，`generic type should be used with type argument`×62。R4 报告已抓线索: raw `class Truth <: Predicate` 丢 `<Any>`。
+- **根因**: 1g R7 修过 **superclass 位**（带 `(...)` 实参的父类）保留 type_args，但**父接口位**（无 `(...)` 的超类型，走 `else` 分支 `interfaces.push(safe_name(&sup_name))`）把捕获到的 type_args 丢弃。`class Instant : Comparable<Instant>` → 裸 `<: Comparable`；`class X : Directive<Target>` → 裸 `<: Directive`。同一 type_args 捕获逻辑，两条渲染分支只有一条用了它。
+- **修复**（parser.rs 接口分支，L1）: `interfaces.push(if type_args.is_empty() { name } else { format!("{}<{}>", name, type_args) })`。**例外**: 非泛型 marker 桩接口（`MutableList`/`MutableMap`/`Entry`/`MutableEntry`，stubs.rs 注入为空非泛型接口）不加实参——否则 `<: MutableList<Int>` 与非泛型 marker 撞 arity（首次提交回归了 242/243，加 `is_nongeneric_marker` 排除后修复）。`MutableCollection<E>` 是泛型 marker，不排除。
+- **层级**: L1（parser.rs 单点 + marker 排除）
+- **测试**: 257_supertype_generic_args（`class : Container<Int>` + `interface Labeled<T> : Container<T>` 接口继承接口带实参）。翻译→cjc→运行 exact-match（42/int）。回归修复 242_mutable_list_marker（`: MutableList<Int>` marker）、243_map_entry_supertype（`: Map.Entry<String,Int>` / `: MutableMap<K,V>`）。
+- **2a 测量**: `generic type should be used`×62 → **21**（-41）。级联: 加实参后 cjc 开始检查接口 conformance，新增 `class missing abstract modifier / should implement abstract function`×29（Comparable 的 compareTo、Collection 面等未完全实现——真实语义缺口，raw 类型此前遮蔽），属正交下轮候选。
+- **已知残留**: type_args 捕获仅取顶层 Ident（`Base<Map<K,V>>` 退化 `Base<Map>`，R7 已知限制）；残留 21 为嵌套/其他路径（enum/object 父类型位若有）。
+
+### 2026-07-10 — HEURISTICS — 2a R6② override equals/hashCode 通用剥离（Kotlin Any vs 仓颉 Object）
+
+- **目标**: 2a `'override' function 'equals'/'hashCode' does not have an overridden function in supertype`（equals×20 + hashCode×20 + 级联）。跨目标复用: 1g ksoup 亦有 14 处。
+- **根因**: Kotlin `Any` 有 equals/hashCode/toString；仓颉 `Object` 无 equals/hashCode。Kotlin `override fun equals/hashCode` 在仓颉无可 override 的超类型成员。
+- **修复**（heuristics.rs `override_provably_unmatched` + 3 新 helper，L2）: equals/hashCode 特例——当**无祖先类且无已实现接口定义该方法**时剥 override（保留方法体为普通 `public [open] func`）；有祖先/接口定义则保留（用户类链 `A(定义equals)→B(override)` 场景 B 正确 override A 的 open equals）。新增 `find_class_by_name`（扫全图 Class 节点按基名）、`class_defines_method`、`ancestor_defines_method`（沿父类链查，深度上限 32 防环；外部/stub 父类找不到节点视为未定义——仓颉 Object/stub 均无 equals）。**toString 不动**（仓颉 ToString 接口 override 合法，由既有接口成员集判定）。
+- **层级**: L2（heuristics.rs，新增名字→节点查找框架）
+- **测试**: 258_equals_hashcode_strip（无父类的 Tag/Wrapper override equals/hashCode → 剥离为普通方法，编译+运行 hello/35/hello/36）。
+- **2a 测量**: `override does not have overridden function`×103 → **21**（-82，equals/hashCode 及级联全清；残 21 为 copy×6/createEmpty×3/contains/hasNext/now 等**其它**方法，独立簇）。
+- **跨目标 1g 复用测量**: 用 R6 译器重译 ksoup（output/target_1g_r8） vs 旧 R7 二进制产物（target_1g_r7）: `override func equals` 7→**0**、`override func hashCode` 7→**0**（14 处全剥）。**但 1g 全量语义数无法本轮测量**——r8 被 8 个 stub typealias redefinition（`type ByteArray/RegexOption/MatchResult/Regex/Appendable`）阻塞在声明阶段。根因: stubs.rs 逐文件注入这些非泛型 typealias，项目模式装配时 3 文件重复定义撞名（io_source_reader*.cj）。此为 **translate_1g 逐文件-stub 去重与 stubs.rs 注入的交互问题，正交于 R6 ①②**（旧 1g-R7 二进制经 k2cj_stubs.cj 去重为单份；当前二进制内联到文件体，装配未去重）——记 1g 战役下轮候选。
+- **已知语义缺口（报告记录）**: equals 剥 override 后，`.equals()` 调用仍被既有规则映射为 `==`，而剥离后的类无 `==` 操作符 → `invalid binary operator '==' on Class-X` 系列（本轮编译错已消 override，但 == 语义未通——属 Option/Equatable 战役，需把 `.equals()`/`==` 统一映射到剥离后的 equals 方法或 @Derive[Equatable]）。
+- **② 语义副作用**: 剥离后 equals/hashCode 是普通方法，Kotlin `==`/HashMap 键行为语义上不再走它们——已知缺口，同上。

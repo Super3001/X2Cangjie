@@ -1268,7 +1268,23 @@ impl Parser {
                         delegate,
                     });
                 } else {
-                    interfaces.push(safe_name(&sup_name));
+                    // 父接口/父类型位保留泛型实参（`class Instant : Comparable<Instant>` →
+                    // `<: Comparable<Instant>`；`class X : Directive<Target>` → `<: Directive<Target>`）。
+                    // 裸 `<: Comparable` 让 cjc 报 "generic type should be used with type
+                    // argument"。此前仅 superclass 分支（带 `(...)`）保留 type_args，接口位漏掉。
+                    // 例外：非泛型 marker 桩接口（MutableList/MutableMap/Entry/MutableEntry，
+                    // stubs.rs 注入为空非泛型接口）不加实参——否则 `<: MutableList<Int>` 与
+                    // 非泛型 marker 撞 arity（回归 242/243）。MutableCollection<E> 是泛型 marker，
+                    // 不在此列。
+                    let is_nongeneric_marker = matches!(
+                        sup_name.as_str(),
+                        "MutableList" | "MutableMap" | "Entry" | "MutableEntry"
+                    );
+                    interfaces.push(if type_args.is_empty() || is_nongeneric_marker {
+                        safe_name(&sup_name)
+                    } else {
+                        format!("{}<{}>", safe_name(&sup_name), type_args)
+                    });
                     // 非集合类接口委托（如 `class Foo : Bar by baz()`）：保持旧行为，
                     // 仅跳过委托表达式（尚不生成转发成员）。
                     if self.eat_kw("by") {
