@@ -473,3 +473,28 @@
 - **验证**: cargo build --release 零 error；全量 single 回归（parser lookahead 改动最高风险——校验 `class Foo\nfun bar` 等无主构造器场景无回归）；抽查 248/249/250（R2 三簇）+ 210/247 通过。
 - **意外收益**: `<: Comparable & ToString`（raw Comparable 无泛型实参）在**全量包内**编译通过（corpus 有非泛型 Comparable stub marker），故未触发 supertype-generic-drop；隔离测试因 std 泛型 Comparable 会报 "generic type should be used with type argument"（故 251 测试不带 Comparable 超类型，聚焦分离构造器+存根）。
 - **已知残留/风险**: ① 残留 5 错为独立簇（number_consumer 的 `emptyIntermediate`、utc_offset_format/date_time_components/formatter 的 unclosed/expected/extend/sign），非本簇，下轮候选。② expect class 成员全存根——运行时构造后访问即抛，语义上是"占位"（common 侧本无实现，符合预期；平台 actual 未纳入翻译）。③ `is_expect` 仅作用于 render_regular_class；expect object/interface（datetime 中无）未特殊处理，走原逻辑。④ 主构造器 lookahead 回退基于 pos 存取（parser 唯一游标，无 graph/scope 副作用），安全。
+
+### 2026-07-10 — PARSER+RENDER — 2a R4 残留 5 parse 错清零（4 根因）→ 语义层首次翻牌
+
+- **目标**: 2a kotlinx-datetime；R4 基线 output/target_2a_r4 = 5 parse 错，分布 formatter/utc_offset_format/date_time_components。这 5 错仍**遮蔽全包语义分析**（cjc 遇任一 parse 错即中止整包语义阶段），故必须全清才能揭示语义层。逐个回溯 .kt 源构造、修 parser/render 根因（非手补产物）。
+- **4 个根因与修复**（全 L1/L2，正交）:
+  1. **函数类型在泛型实参内被 `->` 的 `>` 破坏（2 错，formatter.cj）**。Kotlin `List<Pair<T.() -> Boolean, FormatterStructure<T>>>` 渲染成乱码 `ArrayList<((T) -), FormatterStructure<T>>>`。**根因**: `split_top`（按 `<>()` 深度切顶层逗号）把 `->` 箭头里的 `>` 当作闭合括号 → depth 减到负、逗号误判、连累 `map_type` 的 `rfind('>')` 截断出 `((T) -)`。**修复**（parser.rs `split_top`，L1）: 遇 `-` 且下一字符 `>` 时整体透传 `->`、不动 depth。
+  2. **局部扩展函数被渲染成嵌套 `extend`（1 错，utc_offset_format.cj:isoOffset）**。Kotlin 在函数体内声明 `fun DateTimeFormatBuilder.WithUtcOffset.appendIsoOffsetWithoutZOnZero() {...}`（合法局部扩展函数）→ 渲染成非法的嵌套 `extend WithUtcOffset {...}`（仓颉禁止函数体内 `extend`）。**修复**（render.rs `render_block_inner`，L2）: 块内语句若为带 receiver_type 的 Func，改渲染为**普通嵌套 func**（去掉 extend 包裹与接收者形参）——探针证实仓颉嵌套 func 能经外层方法的 `this` 解析接收者成员（`offsetHours()` 等），语义等价。
+  3. **getter-only 属性丢 getter → 无类型无初始化字段（1 错，date_time_components.cj）**。Kotlin `override val emptyIntermediate get() = expr`（无 backing field）→ `skip_property_accessors` 直接丢弃 getter，产出 `let emptyIntermediate`（无类型无初始化）解析崩溃。**修复**（parser.rs `parse_var_decl` + 新增 `try_capture_getter_init`，L1）: 无初始化器时捕获 getter 的 `= expr`（或 `{block}` 包成 IIFE）作为字段初始化 → `let x = expr`（仓颉无纯 getter 计算属性简写，退化为字段；datetime 此类 getter 多返回常量对象，语义等价）。
+  4. **匿名对象 `object : Iface {...}` 渲染成裸 `object` + 无类型字段（1 错，utc_offset_format.cj:OffsetFields.sign）**。Kotlin `val sign = object : FieldSign<...> {...}` → `parse_object_expr` 丢弃对象体、返回 `Raw("object")`（仓颉非法表达式），且宿主字段 `let sign` 无类型（singleton 拆分字段声明与 init 后 `let sign` 无类型解析崩溃）。**修复**（parser.rs，L2）: `parse_object_expr` 捕获首个超类型（映射后）存入新 parser 字段 `pending_object_type`，返回 throw 存根表达式 `(throw Exception("anonymous object stub"))`（Nothing 类型可赋任意字段）；`parse_var_decl` 在 `val x = <匿名对象>` 且无显式类型时用 `pending_object_type` 给字段补类型。构造时抛存根（占位；仓颉无匿名对象等价物，完整降级=提升为具名类属 L3，本轮只做 make-it-parse 揭示语义层）。
+- **层级**: L1×2（split_top、getter capture）+ L2×2（局部扩展函数、匿名对象）；parser.rs + render.rs 两文件。
+- **测试**: 252_func_type_in_generics（`List<Pair<(Int)->Boolean, String>>` + destructure + 谓词调用）、253_local_extension_fun（扩展函数内的局部扩展函数）、254_getter_only_prop（有/无类型 getter-only）、255_anon_object_stub（匿名对象构造抛存根→捕获）。四例翻译→cjc 编译→运行→exact-match 全绿。
+- **2a 测量（R4 5 → R5）**: 5 parse 错**全清零**（split_top 修复清 formatter 2 错；局部扩展函数清 1；getter capture 清 1；匿名对象清 1）。**语义层首次翻牌 = 1237 errors（全量口径）**。
+- **语义层首曝分布（R5 选簇关键输入，top 15 模板）**:
+  - `undeclared type name`×258（KSerializer×31/SerialDescriptor×20/Decoder×20/Encoder×20 = kotlinx.serialization 未 stub；DateTimePeriod×12、AssignableField×10、Companion×10、DatePeriod×9）
+  - `undeclared identifier`×243（require×39、Directive×35、parse×13、it×9、NoSuchElementException×6、Random×6）
+  - `override does not have overridden function in supertype`×103（equals×20、hashCode×20、formatter×13、parser×13）
+  - `mismatched types`×85
+  - `not a member of class`×68（Object×38、YearMonth×6、Instant×5）
+  - `generic type should be used with type argument`×62（supertype 泛型实参丢失簇，如 raw Comparable）
+  - `extend member not allowed to shadow`×60（extend Instant×40、minus×20、plus×16）
+  - `ambiguous match for function call`×53（plus×33、until×6）
+  - `invalid binary operator`×37、`no matching constructor`×32（PropertyAccessor×15、TwoDigitNumber×10）、`used before initialization`×22、`enum pattern not matched`×19、`not a member of interface`×17、`non-static member access by type name`×16、`missing argument`×15
+  - 热点文件: instant×25、deprecated_instant×20、year_month_range×14、local_date_range×13、utc_offset_format×12、number_consumer×12、time_zone×11
+- **验证**: cargo build --release 零 error；全量 single 回归（split_top/parse_var_decl 改动面广——重点校验）；抽查 251/248/247 + 210。
+- **已知残留/风险**: ① 匿名对象为 make-it-parse 存根（构造抛异常），完整解法=提升为具名类（L3，视 R5 是否需要）。② getter-only 退化为字段丢失「每次访问重算」语义 + 抽象属性覆盖关系（datetime 常量 getter 无影响；若后续遇有副作用 getter 需升级为仓颉 prop）。③ R5 语义层 1237 错为独立多簇——最大可攻簇: 序列化类型未 stub（KSerializer 族 ~91，加 stub 库或剪枝 serializer 层）、override-supertype 失配×103、supertype 泛型实参丢失×62、extend-shadow×60。④ split_top 的 `->` 透传仅按字符对，不处理 `- >`（带空格，Kotlin 无此写法）——datetime 无此形，安全。

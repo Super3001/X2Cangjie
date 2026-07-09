@@ -25,6 +25,10 @@ pub struct Parser {
     /// 签名去重——Kotlin 重载 `safeMultiply(Long,Long)`/`(Int,Int)` 在仓颉均折叠为
     /// `(Int64,Int64)`，两个存根会撞成 redefinition。
     expect_fn_sigs: HashSet<String>,
+    /// 最近解析的匿名对象表达式（`object : SuperType {...}`）的首个超类型（已映射）。
+    /// 仓颉无匿名对象——`parse_object_expr` 记录超类型，`parse_var_decl` 用它给
+    /// `val x = object : T {...}` 的字段补类型（否则 singleton 里 `let x` 无类型崩溃）。
+    pending_object_type: Option<String>,
 }
 
 type PResult<T> = Result<T, String>;
@@ -40,6 +44,7 @@ impl Parser {
             file_ranges: None,
             suppress_trailing_lambda: false,
             expect_fn_sigs: HashSet::new(),
+            pending_object_type: None,
         }
     }
 
@@ -532,11 +537,14 @@ impl Parser {
     /// or `object { body }`. Returns a Raw placeholder node.
     /// Caller has already consumed the `object` keyword.
     fn parse_object_expr(&mut self) -> PResult<NodeId> {
+        // 捕获首个超类型（含泛型实参，映射后）用于给宿主字段补类型。
+        let mut first_supertype: Option<String> = None;
         if self.eat_sym(":") {
             // Supertype list
             loop {
                 self.skip_newlines();
                 if matches!(self.peek(), Tok::Ident(_)) {
+                    let sup_start = self.pos;
                     self.bump(); // supertype name
                     // Skip generic args
                     if self.is_sym("<") {
@@ -549,6 +557,20 @@ impl Parser {
                                 depth -= 1;
                             }
                             self.bump();
+                        }
+                    }
+                    // 捕获超类型原文（名字 + 可选 `<...>`），映射为仓颉类型。
+                    if first_supertype.is_none() {
+                        let raw: String = self.toks[sup_start..self.pos]
+                            .iter()
+                            .map(|t| match &t.tok {
+                                Tok::Ident(s) => s.clone(),
+                                Tok::Sym(s) => s.clone(),
+                                _ => String::new(),
+                            })
+                            .collect();
+                        if !raw.is_empty() {
+                            first_supertype = Some(map_type(&raw));
                         }
                     }
                     // Skip constructor args
@@ -568,9 +590,13 @@ impl Parser {
         if self.is_sym("{") {
             let _ = self.skip_balanced_braces();
         }
-        // Return placeholder — postfix operations (like .buffer()) are handled by
-        // parse_postfix
-        Ok(self.g.add(Kind::Raw("object".into())))
+        // 仓颉无匿名对象——降级为 throw 存根表达式（Nothing 类型，可赋给任意字段），
+        // 让含匿名对象的声明先解析通过、揭示下游语义层。宿主字段类型由 parse_var_decl
+        // 从 pending_object_type 补全（否则 singleton 里 `let x` 无类型解析崩溃）。
+        self.pending_object_type = first_supertype;
+        Ok(self.g.add(Kind::Raw(
+            "(throw Exception(\"anonymous object stub\"))".into(),
+        )))
     }
 
     fn parse_typealias(&mut self) -> PResult<NodeId> {
@@ -1619,7 +1645,15 @@ impl Parser {
         let mut is_lazy = false;
         if self.eat_sym("=") {
             self.skip_newlines();
+            self.pending_object_type = None;
             init = Some(self.parse_expr()?);
+            // `val x = object : T {...}`：匿名对象无自身类型，用超类型 T 给字段补类型
+            // （否则 singleton 拆分出的 `let x` 无类型解析崩溃）。
+            if ty.is_none() {
+                if let Some(obj_ty) = self.pending_object_type.take() {
+                    ty = Some(obj_ty);
+                }
+            }
         } else if self.is_kw("by") {
             // `val x by lazy { expr }` → evaluate eagerly
             self.bump(); // by
@@ -1646,7 +1680,15 @@ impl Parser {
                 init = Some(self.parse_expr()?);
             }
         }
-        // 跳过属性访问器 get()/get() = expr/get() { ... } / set(value) / private set
+        // getter-only 属性 `val x get() = expr` / `val x: T get() = expr`（无初始化器、
+        // 无 backing field）：捕获 getter 返回表达式作为字段初始化，渲染为 `let x = expr`。
+        // 仓颉无「纯 getter 计算属性」简写；退化为字段——datetime 里此类 getter 多返回
+        // 常量对象（emptyIntermediate 等），语义等价。原先 skip_property_accessors 直接
+        // 丢弃 getter，导致 `let x`（无类型无初始化）解析崩溃或 uninit 字段。
+        if init.is_none() && !is_lazy {
+            init = self.try_capture_getter_init();
+        }
+        // 跳过剩余属性访问器 get()/get() = expr/get() { ... } / set(value) / private set
         self.skip_property_accessors();
         let name_node = self.g.add(Kind::Name {
             original: name.clone(),
@@ -1659,6 +1701,49 @@ impl Parser {
             init,
             is_lazy,
         }))
+    }
+
+    /// 捕获 getter-only 属性的 getter 返回表达式（`get() = expr` 或 `get() { block }`），
+    /// 作为字段初始化。仅消费 getter 本身；失败/无 getter 时回退 pos 并返回 None。
+    fn try_capture_getter_init(&mut self) -> Option<NodeId> {
+        let save = self.pos;
+        self.skip_newlines();
+        self.skip_modifiers();
+        if !self.eat_kw("get") {
+            self.pos = save;
+            return None;
+        }
+        if self.is_sym("(") {
+            self.skip_balanced_parens();
+        }
+        self.skip_newlines();
+        // 可选返回类型标注 `get(): T` —— 跳过
+        if self.eat_sym(":") {
+            let _ = self.parse_type();
+        }
+        self.skip_newlines();
+        if self.eat_sym("=") {
+            self.skip_newlines();
+            match self.parse_expr() {
+                Ok(e) => Some(e),
+                Err(_) => {
+                    self.pos = save;
+                    None
+                }
+            }
+        } else if self.is_sym("{") {
+            match self.parse_block() {
+                Ok(block) => Some(self.wrap_lambda_body_as_expr(block)),
+                Err(_) => {
+                    self.pos = save;
+                    None
+                }
+            }
+        } else {
+            // 抽象/无体 getter（`val x: T get`）—— 无表达式可捕获，回退
+            self.pos = save;
+            None
+        }
     }
 
     /// Wrap a lambda body (Block) as an IIFE expression `({ => body })()`
@@ -3174,7 +3259,19 @@ fn split_top(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut depth = 0;
     let mut cur = String::new();
-    for c in s.chars() {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        // 函数箭头 `->`：其中的 `>` 不是泛型/括号闭合，整体透传不动 depth。
+        // 否则 `Pair<(T) -> R, X>` 里 `->` 的 `>` 会把 depth 减到负、错误地把
+        // 逗号当顶层分隔（进而 rfind('>') 也被误导，产出 `((T) -)` 的乱码）。
+        if c == '-' && i + 1 < chars.len() && chars[i + 1] == '>' {
+            cur.push('-');
+            cur.push('>');
+            i += 2;
+            continue;
+        }
         match c {
             '<' | '(' => {
                 depth += 1;
@@ -3190,6 +3287,7 @@ fn split_top(s: &str) -> Vec<String> {
             }
             _ => cur.push(c),
         }
+        i += 1;
     }
     if !cur.trim().is_empty() {
         out.push(cur.trim().to_string());

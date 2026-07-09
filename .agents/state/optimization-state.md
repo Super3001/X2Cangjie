@@ -52,7 +52,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R3: **5**（111 → 18 → 5; 仍全为 parse 层, 语义层未揭示） | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R3 expect-class 分离构造体双层修复(parser lookahead + expect 成员惰性 prop/throw stub), 7 个 expect class 全零错; R4 候选: 残留 5 独立小 parse 错(number_consumer/utc_offset_format/date_time_components/formatter), 清完揭示全量语义层 |
+| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R4: **parse 0 / 语义层首曝 1237** | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R4 清完最后 4 parse 根因(split_top `->` 透传/局部扩展函数/getter-only/匿名对象存根); 语义大簇: KSerializer 族 258 中 ~91(依赖边界,剪枝候选)/undeclared 243(require×39 映射候选)/override 103/泛型实参丢失 62/extend-shadow 60 |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -125,6 +125,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **靶向测试**: 241_autocloseable / 242_mutable_list_marker / 243_map_entry_supertype / proj_parserecovery。
 - **回归**: 235/235 single + 36/36 project 全绿。
 - **每错成本注**: 本轮消 47 错 + 修正口径 + 解锁 2a 测量。R2-R4 的"每轮消 6-8 错"成本曲线基于误计口径，同样作废——真实曲线待 R6 起重建。
+
+### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R4 完成 — parse 层收官, 语义层首曝 1237（auto R6/15）
+
+- **行动簇**: 残留 5 parse 错打包（4 根因正交）: ① split_top 把 `->` 中 `>` 当闭合（泛型内函数类型乱码, L1: `->` 整体透传）② 函数体内局部扩展函数渲染成非法嵌套 extend（L2: render_block_inner 转普通嵌套 func）③ `val x get() = expr` getter 被丢成无类型字段（L1: try_capture_getter_init）④ 匿名对象 `object : Iface {...}`（L2: make-it-parse throw 存根 + pending_object_type 补字段类型; 完整解=提升具名类, L3 候选）。
+- **测量**: 5 → **0 parse**; **语义层首曝 1237**（层地形图兑现, 同 1e 6→69 / 1g 45→1889 先例——审计修正(c)预警成立, "5"确非收敛数）。
+- **语义首曝分布**: undeclared type 258（KSerializer/SerialDescriptor/Decoder/Encoder ~91 = kotlinx.serialization 依赖边界）/ undeclared id 243（require×39, Directive×35）/ override 103（equals×20+hashCode×20）/ mismatched 85 / not-member 68 / 泛型实参丢失 62（raw Comparable 同源）/ extend-shadow 60（extend Instant×40）/ ambiguous 53（plus×33）。热点: instant×25, deprecated_instant×20。
+- **靶向测试**: 252/253/254/255。回归 247/247 + 36/36 全绿。
+- **产物目录**: 2a R4 = target_2a_r5/。
 
 ### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R3 完成 — expect-class 分离构造体簇清零（auto R5/15）
 

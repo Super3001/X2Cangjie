@@ -2540,6 +2540,36 @@ impl Engine {
         if let Kind::Block { stmts } = self.g.kind(id) {
             let mut lines = Vec::new();
             for s in stmts {
+                // 局部扩展函数（`fun Receiver.name() {...}` 声明在函数体内，Kotlin 合法）：
+                // 仓颉不允许在函数体内嵌套 `extend`。渲染为普通嵌套 func——接收者成员
+                // 经外层方法的 `this` 解析（嵌套 func 捕获外层 this，已验证）。
+                if let Kind::Func {
+                    name,
+                    params,
+                    ret,
+                    body,
+                    is_main,
+                    is_abstract,
+                    is_override,
+                    receiver_type: Some(_),
+                    generic_params,
+                } = self.g.kind(*s)
+                {
+                    let rendered = self.render_func(
+                        *s,
+                        name,
+                        params,
+                        ret.clone(),
+                        *body,
+                        *is_main,
+                        *is_abstract,
+                        *is_override,
+                        None,
+                        generic_params,
+                    )?;
+                    lines.push(rendered);
+                    continue;
+                }
                 lines.push(self.t(*s)?);
             }
             Some(lines.join("\n"))
