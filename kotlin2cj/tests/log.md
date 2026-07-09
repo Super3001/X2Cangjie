@@ -1,9 +1,9 @@
 # kotlin2cj 测试日志
 
-- 用例总数: 235
-- 翻译成功: 235/235
-- 仓颉编译通过: 235/235
-- 运行输出匹配: 235/235
+- 用例总数: 237
+- 翻译成功: 237/237
+- 仓颉编译通过: 237/237
+- 运行输出匹配: 237/237
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
@@ -162,7 +162,9 @@
 | 243_map_entry_supertype | ✅ | ✅ | ✅ |  |
 | 243_throw_elvis | ✅ | ✅ | ✅ |  |
 | 244_extension_property | ✅ | ✅ | ✅ |  |
+| 244_list_delegation | ✅ | ✅ | ✅ |  |
 | 245_fully_qualified_type | ✅ | ✅ | ✅ |  |
+| 245_list_delegation_field | ✅ | ✅ | ✅ |  |
 | 246_top_level_var_func_collision | ✅ | ✅ | ✅ |  |
 | 247_fully_qualified_refined | ✅ | ✅ | ✅ |  |
 | 248_typealias_render | ✅ | ✅ | ✅ |  |

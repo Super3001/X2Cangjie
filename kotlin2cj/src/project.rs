@@ -50,6 +50,7 @@ fn generate_cjpm_toml(project_name: &str, has_main: bool) -> String {
   name = "{name}"
   version = "1.0.0"
   output-type = "{output_type}"
+  compile-option = "--error-count-limit all"
 "#,
         name = project_name,
         output_type = output_type

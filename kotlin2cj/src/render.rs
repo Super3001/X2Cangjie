@@ -430,6 +430,7 @@ impl Engine {
                 init_block,
                 companion_members,
                 is_singleton,
+                supertype_delegations,
             } => self.render_class(
                 &name,
                 &ctor_params,
@@ -446,6 +447,7 @@ impl Engine {
                 init_block,
                 &companion_members,
                 is_singleton,
+                &supertype_delegations,
             ),
             Kind::Enum {
                 name,
@@ -1218,6 +1220,7 @@ impl Engine {
         init_block: Option<NodeId>,
         companion_members: &[NodeId],
         is_singleton: bool,
+        supertype_delegations: &[SuperDelegation],
     ) -> Option<String> {
         let gen_suffix = if generics.is_empty() {
             String::new()
@@ -1244,6 +1247,7 @@ impl Engine {
                 super_args,
                 init_block,
                 companion_members,
+                supertype_delegations,
             )
         }
     }
@@ -1397,8 +1401,13 @@ impl Engine {
         super_args: &[NodeId],
         init_block: Option<NodeId>,
         companion_members: &[NodeId],
+        supertype_delegations: &[SuperDelegation],
     ) -> Option<String> {
         let mut body = String::new();
+        // 集合接口委托（`: MutableList<T> by delegate`）：合成后备字段 + `List<T>`
+        // 父类型 + 转发成员。返回 (后备字段声明, 转发成员文本, 追加的父类型)。
+        let (deleg_fields, deleg_members, deleg_ifaces) =
+            self.render_list_delegations(supertype_delegations, members, is_open);
         // Promote Plain ctor params that need to be accessible from methods
         // (e.g. `cause` in Exception subclasses, referenced via inherited Throwable.cause).
         let mut ctor_params_owned: Vec<CtorParam> = ctor_params.to_vec();
@@ -1451,6 +1460,8 @@ impl Engine {
             // Store cause as Exception type for cross-Exception-subtype compatibility.
             body.push_str(&format!("{}var {}: ?Exception = None\n", IND, name));
         }
+        // 集合接口委托的合成后备字段（委托目标非裸标识符时）。
+        body.push_str(&deleg_fields);
         // 构造器
         let super_call: Option<String> = if super_args.is_empty() {
             None
@@ -1626,6 +1637,8 @@ impl Engine {
                 IND
             ));
         }
+        // 集合接口委托的转发成员（转发到委托目标，满足 List<T> 接口面）。
+        body.push_str(&deleg_members);
         // 类关键字与继承。value class → 仓颉 struct（值语义），@Derive[Equatable]
         // 自动派生结构相等（== / !=）。注意：派生的 == 在类型自身方法体内不可见，
         // 故 value class 内部的 `when(this)` 比较走字段（见 render_when）。
@@ -1643,6 +1656,8 @@ impl Engine {
             ifaces.push(s.clone());
         }
         ifaces.extend(interfaces.iter().cloned());
+        // 集合接口委托：真实仓颉 `List<T>` 父类型（替代原 MutableList marker）。
+        ifaces.extend(deleg_ifaces.iter().cloned());
         if is_data {
             ifaces.push("ToString".to_string());
         }
@@ -1668,6 +1683,131 @@ impl Engine {
         } else {
             Some(format!("{}\n\n{}", class_text, lifted.join("\n\n")))
         }
+    }
+
+    /// 集合接口委托（Kotlin `class C : MutableList<T> by delegate`）渲染。
+    ///
+    /// 返回 `(后备字段声明, 转发成员文本, 追加父类型)`：
+    /// - 父类型：真实仓颉 `List<T>`（`std.collection`，替代 R5 的 MutableList marker）。
+    /// - 后备字段：委托目标非裸标识符（如 `by mutableListOf()`）时合成一个
+    ///   `private let __k2cj_delegate: ArrayList<T>` 持有委托对象；裸标识符
+    ///   （如 `by delegateList`，指向构造参数字段）直接转发，不建后备字段。
+    /// - 转发成员：cjc 1.0.5 探针实测的 `List<T>`（含 `Collection<T>`）完整必需面——
+    ///   `get / [](get) / [](set) / add×4 / remove×2 / removeIf / clear / isEmpty /
+    ///   iterator / toArray` + `prop first / last / size`——逐一转发到委托目标。
+    ///   用户已 override 的成员按 (名字, 参数个数) 去重，避免 redefinition。
+    fn render_list_delegations(
+        &self,
+        delegations: &[SuperDelegation],
+        members: &[NodeId],
+        is_open: bool,
+    ) -> (String, String, Vec<String>) {
+        let mut fields = String::new();
+        let mut mbody = String::new();
+        let mut ifaces: Vec<String> = Vec::new();
+        // 一个类多重集合委托无实际意义——只处理首个。
+        let Some(d) = delegations.first() else {
+            return (fields, mbody, ifaces);
+        };
+        let t = d.type_args.trim().to_string();
+        if t.is_empty() {
+            return (fields, mbody, ifaces);
+        }
+        let Some(dstr) = self.t(d.delegate) else {
+            return (fields, mbody, ifaces);
+        };
+        // 委托目标：裸标识符（构造参数/字段）直接转发；否则合成后备字段。
+        let target = if matches!(self.g.kind(d.delegate), Kind::NameRef { .. }) {
+            dstr
+        } else {
+            let fname = "__k2cj_delegate".to_string();
+            fields.push_str(&format!(
+                "{}private let {}: ArrayList<{}> = {}\n",
+                IND, fname, t, dstr
+            ));
+            fname
+        };
+        ifaces.push(format!("List<{}>", t));
+        // 用户已定义成员签名 (名字, 参数个数)，用于去重。
+        let mut user_sigs: std::collections::HashSet<(String, usize)> =
+            std::collections::HashSet::new();
+        for m in members {
+            match self.g.kind(*m) {
+                Kind::Func { name, params, .. } => {
+                    user_sigs.insert((name.clone(), params.len()));
+                }
+                _ => {
+                    if let Some(n) = self.var_decl_name(*m) {
+                        user_sigs.insert((n, 0));
+                    }
+                }
+            }
+        }
+        let om = if is_open { "public open" } else { "public" };
+        // (去重键, 代码)。去重键 None = 命名参数/操作符签名，绝不与用户成员冲突，恒生成。
+        let gen_members: Vec<(Option<(&str, usize)>, String)> = vec![
+            (Some(("get", 1)), format!(
+                "{} func get(index: Int64): ?{} {{\n{}return {}.get(index)\n}}",
+                om, t, IND, target)),
+            (None, format!(
+                "{} operator func [](index: Int64): {} {{\n{}return {}[index]\n}}",
+                om, t, IND, target)),
+            (None, format!(
+                "{} operator func [](index: Int64, value!: {}): Unit {{\n{}{}[index] = value\n}}",
+                om, t, IND, target)),
+            (Some(("add", 1)), format!(
+                "{} func add(element: {}): Unit {{\n{}{}.add(element)\n}}",
+                om, t, IND, target)),
+            (None, format!(
+                "{} func add(element: {}, at!: Int64): Unit {{\n{}{}.add(element, at: at)\n}}",
+                om, t, IND, target)),
+            (None, format!(
+                "{} func add(all!: Collection<{}>): Unit {{\n{}{}.add(all: all)\n}}",
+                om, t, IND, target)),
+            (None, format!(
+                "{} func add(all!: Collection<{}>, at!: Int64): Unit {{\n{}{}.add(all: all, at: at)\n}}",
+                om, t, IND, target)),
+            (Some(("remove", 1)), format!(
+                "{} func remove(at!: Int64): {} {{\n{}return {}.remove(at: at)\n}}",
+                om, t, IND, target)),
+            (None, format!(
+                "{} func remove(range: Range<Int64>): Unit {{\n{}{}.remove(range)\n}}",
+                om, IND, target)),
+            (Some(("removeIf", 1)), format!(
+                "{} func removeIf(predicate: ({}) -> Bool): Unit {{\n{}{}.removeIf(predicate)\n}}",
+                om, t, IND, target)),
+            (Some(("clear", 0)), format!(
+                "{} func clear(): Unit {{\n{}{}.clear()\n}}",
+                om, IND, target)),
+            (Some(("isEmpty", 0)), format!(
+                "{} func isEmpty(): Bool {{\n{}return {}.isEmpty()\n}}",
+                om, IND, target)),
+            (Some(("iterator", 0)), format!(
+                "{} func iterator(): Iterator<{}> {{\n{}return {}.iterator()\n}}",
+                om, t, IND, target)),
+            (Some(("toArray", 0)), format!(
+                "{} func toArray(): Array<{}> {{\n{}return {}.toArray()\n}}",
+                om, t, IND, target)),
+            (Some(("first", 0)), format!(
+                "{} prop first: ?{} {{\n{}get() {{ {}.first }}\n}}",
+                om, t, IND, target)),
+            (Some(("last", 0)), format!(
+                "{} prop last: ?{} {{\n{}get() {{ {}.last }}\n}}",
+                om, t, IND, target)),
+            (Some(("size", 0)), format!(
+                "{} prop size: Int64 {{\n{}get() {{ {}.size }}\n}}",
+                om, IND, target)),
+        ];
+        for (key, code) in gen_members {
+            if let Some((nm, ar)) = key {
+                if user_sigs.contains(&(nm.to_string(), ar)) {
+                    continue;
+                }
+            }
+            mbody.push_str(&indent(&code, 1));
+            mbody.push('\n');
+        }
+        (fields, mbody, ifaces)
     }
 
     fn rename_conflicting_companion_func(

@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R5: **1411**（全量口径; R4 之前的"10"是打印截断误计,真实 ~1460） | R5 undeclared-supertype 簇清零(stub+折叠+override剥离), override 簇 71→36; 剩余大簇: undeclared identifier 233 / mismatched types 229 / not-member-of-class 145 / not-member-of-enum 93 / invalid-binary-op 80 — 语义战役 R6+ | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R6: **1403** | R6 委托簇 part 1: List<T> 真实映射+转发生成落地, not-member 145→131; R7 收尾四接缝(prop撞名/removeIf签名/override剥离成员集/直接实现型转发) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -80,6 +80,16 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R6 完成 — mutable-collection 委托簇 part 1（auto R1/15）
+
+- **行动簇**: mutable-collection-delegation — Kotlin 接口委托 `class X : MutableList<T> by delegateList` 被丢弃 + 空 marker 父类型，Nodes/Elements/ParseErrorList 全部集合调用面失效。
+- **修复（fixer, 详见 fix-history 2026-07-09 条）**: ① node.rs `SuperDelegation` 节点模型 ② parser.rs 父类型位 `by` 委托捕获 + `suppress_trailing_lambda` 门控（防 `by x {` 吞类体）③ render.rs `render_list_delegations()` — 父类型映射真实 `std.collection.List<T>` + 全套转发成员生成（探针实测接口面）+ 用户 override 去重 ④ project.rs cjpm.toml 模板固化 `--error-count-limit all`（口径基建）。
+- **测量**: 1411 → **1403**（net -8；预判 ~145，**误差 18×，surprise 触发重估**）。
+- **重估结论**: by 委托类部分打穿（not-member 145→131），但四个接缝未合: (a) `List<T>` 的 `prop first/last` 与用户 `func first()/last()` 撞名 (b) removeIf 返回 Unit vs Bool (c) override 剥离的已知成员集未收录 std List/Collection → equals/hashCode/clone override 错误 +7（36→43）(d) **直接实现型**（ParseErrorList/NodeList `: MutableList<T>` 无 by）父类型映射成 `List<T>` 生效但无转发生成 → unimplemented。R7 = 簇 C part 2 收尾这四点。
+- **靶向测试**: 244_list_delegation / 245_list_delegation_field。
+- **回归**: 237/237 single + 36/36 project 全绿。
+- **每错成本注**: 本轮 net -8 偏基建（委托机制铺轨），收益预计 R7 兑现；连续 2 轮 <10% 则按判据评估切换。
 
 ### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R5 完成 — 指标口径修正 + undeclared-supertype 簇清零
 

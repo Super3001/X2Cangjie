@@ -3,3 +3,4 @@
   name = "proj_shapes"
   version = "1.0.0"
   output-type = "executable"
+  compile-option = "--error-count-limit all"

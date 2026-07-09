@@ -68,6 +68,8 @@ pub enum Kind {
         companion_members: Vec<NodeId>,
         /// `object Name { ... }` 单例声明。
         is_singleton: bool,
+        /// Kotlin 接口委托（`: MutableList<T> by delegateList`）：父接口 + 委托目标。
+        supertype_delegations: Vec<SuperDelegation>,
     },
     /// Kotlin secondary constructor: `constructor(...) : this(...) { ... }`.
     SecondaryConstructor {
@@ -281,6 +283,21 @@ pub struct ConstructorDelegate {
     pub args: Vec<NodeId>,
 }
 
+/// Kotlin 接口委托：`class C : SuperType<Args> by <delegate>`。
+/// 渲染时把 SuperType 映射为真实仓颉集合接口（`MutableList`/`List` → `List<Args>`），
+/// 并自动生成一套转发成员（转发到 `delegate` 表达式）满足该接口。
+#[derive(Debug, Clone)]
+pub struct SuperDelegation {
+    /// 父接口基名（已 safe_name），如 "MutableList" / "List"。当前渲染两者都映射为
+    /// `List<T>`；保留字段以备将来区分 `List`（可变）与 `ReadOnlyList`（只读）。
+    #[allow(dead_code)]
+    pub supertype: String,
+    /// 父接口泛型实参原文，如 "T" / "Element"（空串表示无泛型实参）。
+    pub type_args: String,
+    /// 委托目标表达式节点（转发成员体调用它）。
+    pub delegate: NodeId,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CtorParamKind {
     Val,
@@ -399,12 +416,16 @@ impl Graph {
                 members,
                 super_args,
                 init_block,
+                supertype_delegations,
                 ..
             } => {
                 v.extend(members);
                 v.extend(super_args);
                 if let Some(ib) = init_block {
                     v.push(*ib);
+                }
+                for d in supertype_delegations {
+                    v.push(d.delegate);
                 }
             }
             Kind::SecondaryConstructor {

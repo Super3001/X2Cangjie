@@ -17,6 +17,9 @@ pub struct Parser {
     pub type_aliases: HashMap<String, String>,
     /// 项目级翻译：文件字节范围映射 Vec<(start_byte, end_byte)>，索引即文件编号。
     file_ranges: Option<Vec<(usize, usize)>>,
+    /// 抑制尾随 lambda 解析。解析接口委托表达式（`class C : List<T> by delegate {`）
+    /// 时置位，避免把紧随其后的类体 `{...}` 误当作 `delegate { ... }` 的尾随 lambda。
+    suppress_trailing_lambda: bool,
 }
 
 type PResult<T> = Result<T, String>;
@@ -30,6 +33,7 @@ impl Parser {
             scopes: vec![HashMap::new()],
             type_aliases: HashMap::new(),
             file_ranges: None,
+            suppress_trailing_lambda: false,
         }
     }
 
@@ -1100,6 +1104,7 @@ impl Parser {
         let mut superclass = None;
         let mut interfaces = Vec::new();
         let mut super_args = Vec::new();
+        let mut supertype_delegations: Vec<SuperDelegation> = Vec::new();
         if self.eat_sym(":") {
             loop {
                 self.skip_newlines();
@@ -1126,9 +1131,12 @@ impl Parser {
                     "MutableMap.MutableEntry" => "MutableEntry".to_string(),
                     _ => sup_name,
                 };
-                // 跳过泛型实参（如 `Map.Entry<String, String?>`）
+                // 跳过泛型实参（如 `Map.Entry<String, String?>`），同时捕获顶层
+                // 类型实参原文（`MutableList<T>` → "T"），供接口委托渲染 `List<T>`。
+                let mut type_args = String::new();
                 if self.eat_sym("<") {
                     let mut depth = 1i32;
+                    let mut parts: Vec<String> = Vec::new();
                     while depth > 0 {
                         let tok = self.peek().clone();
                         match tok {
@@ -1136,10 +1144,18 @@ impl Parser {
                             Tok::Sym(s) if s == ">" => { self.bump(); depth -= 1; }
                             Tok::Sym(s) if s == ">>" => { self.bump(); depth -= 2; }
                             Tok::Eof => break,
+                            Tok::Ident(s) => {
+                                if depth == 1 { parts.push(s.clone()); }
+                                self.bump();
+                            }
                             _ => { self.bump(); }
                         }
                     }
+                    type_args = parts.join(", ");
                 }
+                // 接口委托：`MutableList<T> / List<T> by <delegate>` 折叠为真实仓颉
+                // 集合接口 `List<T>` 并在渲染时自动生成转发成员（见 render_regular_class）。
+                let is_delegatable_coll = matches!(sup_name.as_str(), "MutableList" | "List");
                 if self.is_sym("(") {
                     self.bump();
                     self.skip_newlines();
@@ -1153,14 +1169,28 @@ impl Parser {
                     }
                     self.expect_sym(")")?;
                     superclass = Some(safe_name(&sup_name));
+                } else if self.is_kw("by") && is_delegatable_coll {
+                    // 集合接口委托：捕获委托表达式，交由渲染层生成 `List<T>` 父类型 +
+                    // 转发成员。不推入 interfaces（避免再打 MutableList marker）。
+                    self.bump(); // by
+                    let prev = self.suppress_trailing_lambda;
+                    self.suppress_trailing_lambda = true; // 防止类体 `{` 被当作尾随 lambda
+                    let delegate = self.parse_expr();
+                    self.suppress_trailing_lambda = prev; // 出错时也必须复位，避免泄漏到后续文件
+                    let delegate = delegate?;
+                    supertype_delegations.push(SuperDelegation {
+                        supertype: safe_name(&sup_name),
+                        type_args,
+                        delegate,
+                    });
                 } else {
                     interfaces.push(safe_name(&sup_name));
-                }
-                // 跳过 `by` 委托实现（如 `class Foo : Bar by baz()`）
-                if self.eat_kw("by") {
-                    // 跳过委托表达式直到 `,` 或 `{`
-                    while !self.is_sym(",") && !self.is_sym("{") && !self.at_eof() {
-                        self.bump();
+                    // 非集合类接口委托（如 `class Foo : Bar by baz()`）：保持旧行为，
+                    // 仅跳过委托表达式（尚不生成转发成员）。
+                    if self.eat_kw("by") {
+                        while !self.is_sym(",") && !self.is_sym("{") && !self.at_eof() {
+                            self.bump();
+                        }
                     }
                 }
                 if !self.eat_sym(",") {
@@ -1290,6 +1320,7 @@ impl Parser {
             init_block,
             companion_members,
             is_singleton,
+            supertype_delegations,
         }))
     }
 
@@ -2052,7 +2083,7 @@ impl Parser {
                         safe,
                     });
                     e = self.g.add(Kind::Call { callee: m, args });
-                } else if self.is_sym("{") {
+                } else if self.is_sym("{") && !self.suppress_trailing_lambda {
                     // 无括号尾随 lambda：recv.method { ... }
                     let lam = self.parse_lambda()?;
                     if name == "forEach" {
@@ -2125,7 +2156,7 @@ impl Parser {
                     op: op.into(),
                     value: one,
                 });
-            } else if self.is_sym("{") {
+            } else if self.is_sym("{") && !self.suppress_trailing_lambda {
                 // 无括号尾随 lambda 调用：ident { ... }
                 let lam = self.parse_lambda()?;
                 e = self.g.add(Kind::Call { callee: e, args: vec![lam] });
@@ -2353,7 +2384,7 @@ impl Parser {
     fn parse_args(&mut self) -> PResult<Vec<NodeId>> {
         let mut args = self.parse_args_no_trailing_lambda()?;
         // 尾随 lambda
-        if self.is_sym("{") {
+        if self.is_sym("{") && !self.suppress_trailing_lambda {
             let lam = self.parse_lambda()?;
             args.push(lam);
         }
