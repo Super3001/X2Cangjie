@@ -52,7 +52,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R2: **18**（R0 lex遮蔽 → R1 揭示111 → R2 修3簇 -93） | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R1 插值多行折叠(lex 4→0); R2 打包清 类级variance(44)/override-static(43)/expect缺body(6); R3 候选: expect-class 分离构造体解析崩溃(结构性, 预计连清 15+: uninit×11+companion×2+孤儿override链) |
+| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R3: **5**（111 → 18 → 5; 仍全为 parse 层, 语义层未揭示） | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R3 expect-class 分离构造体双层修复(parser lookahead + expect 成员惰性 prop/throw stub), 7 个 expect class 全零错; R4 候选: 残留 5 独立小 parse 错(number_consumer/utc_offset_format/date_time_components/formatter), 清完揭示全量语义层 |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -112,6 +112,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **靶向测试**: 241_autocloseable / 242_mutable_list_marker / 243_map_entry_supertype / proj_parserecovery。
 - **回归**: 235/235 single + 36/36 project 全绿。
 - **每错成本注**: 本轮消 47 错 + 修正口径 + 解锁 2a 测量。R2-R4 的"每轮消 6-8 错"成本曲线基于误计口径，同样作废——真实曲线待 R6 起重建。
+
+### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R3 完成 — expect-class 分离构造体簇清零（auto R5/15）
+
+- **行动簇**: 簇 C 真根因双层修复——① parser: `expect class` 分离式主构造器（类名一行、constructor 下一行）时 `skip_modifiers` 不跳换行 → lookahead 失配 → 空类 + 类体泄漏顶层; ② render: expect 成员无体 → 字段渲染为抛异常惰性 prop（规避静态 eager 初始化崩溃）、方法/companion → throw stub。两层必须同修（parse 错遮蔽语义错，只修①会让 7 个 expect class 语义错集中爆发）。
+- **测量**: 18 → **5**（-13, 有效率 72%）。uninit×11→0, 孤儿 companion×2→0, 零新增。
+- **⚠️ 层地形**: 残留 5 错仍是 parse 层（unclosed `(` / expected `;` / extend / sign / emptyIntermediate, 4 文件）——**2a 语义层至今未揭示**，R4 清完才翻牌。
+- **靶向测试**: 251_expect_class。回归 243/243 + 36/36 全绿。
+- **产物目录**: 2a R3 = target_2a_r4/。
 
 ### Phase 2 — 2a kotlinx-datetime (2026-07-09/10) ⏳ R1-R2 完成 — lex 阻断清零 + 3 parse 簇打包（auto R3-R4/15）
 

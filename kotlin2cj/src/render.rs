@@ -507,6 +507,7 @@ impl Engine {
                 companion_members,
                 is_singleton,
                 supertype_delegations,
+                is_expect,
             } => self.render_class(
                 &name,
                 &ctor_params,
@@ -524,6 +525,7 @@ impl Engine {
                 &companion_members,
                 is_singleton,
                 &supertype_delegations,
+                is_expect,
             ),
             Kind::Enum {
                 name,
@@ -1341,6 +1343,7 @@ impl Engine {
         companion_members: &[NodeId],
         is_singleton: bool,
         supertype_delegations: &[SuperDelegation],
+        is_expect: bool,
     ) -> Option<String> {
         let gen_suffix = if generics.is_empty() {
             String::new()
@@ -1368,6 +1371,7 @@ impl Engine {
                 init_block,
                 companion_members,
                 supertype_delegations,
+                is_expect,
             )
         }
     }
@@ -1523,6 +1527,7 @@ impl Engine {
         init_block: Option<NodeId>,
         companion_members: &[NodeId],
         supertype_delegations: &[SuperDelegation],
+        is_expect: bool,
     ) -> Option<String> {
         let mut body = String::new();
         // 集合接口委托（`: MutableList<T> by delegate`）：合成后备字段 + `List<T>`
@@ -1696,6 +1701,16 @@ impl Engine {
             }
             if matches!(self.g.kind(*m), Kind::Class { .. } | Kind::Enum { .. }) {
                 lifted.push(self.t(*m)?);
+                continue;
+            }
+            // `expect class` 成员：common 侧无实现——字段渲染为抛异常的计算 prop、
+            // 方法/构造器渲染为 throw stub body（否则无体成员被 cjc 拒为 "can not be
+            // abstract" / 未初始化字段）。companion 成员加 `static`。
+            if is_expect {
+                let is_companion = companion_members.contains(m);
+                let em = self.render_expect_member(*m, is_companion)?;
+                body.push_str(&indent(&em, 1));
+                body.push('\n');
                 continue;
             }
             if let Some(field) = self.var_decl_name(*m) {
@@ -2181,6 +2196,83 @@ impl Engine {
             }
         }
         moved
+    }
+
+    /// 渲染 `expect class` 的单个成员为可编译存根。
+    /// - 字段（val/var）→ 抛异常的计算 prop（val 仅 get；var 加 set）。惰性——仅
+    ///   访问时抛，避免静态字段 eager 初始化在程序启动即崩。
+    /// - 方法/companion 方法 → `func ... { throw }`（companion 加 `static`）。
+    /// - 次构造器 → `init(...) { throw }`。
+    fn render_expect_member(&self, m: NodeId, is_companion: bool) -> Option<String> {
+        const STUB: &str = "throw Exception(\"expect class stub\")";
+        let stat = if is_companion { "static " } else { "" };
+        // 存根成员剥默认值（`name!: T = d` → `name: T`；prop/静态上下文不接受默认值）。
+        let strip_default = |p: String| -> String {
+            match p.find(" = ") {
+                Some(eq) => p[..eq].to_string(),
+                None => p,
+            }
+        };
+        match self.g.kind(m) {
+            Kind::VarDecl { mutable, ty, .. } => {
+                let name = self.var_decl_name(m)?;
+                let ty = ty.clone()?; // expect 字段恒带类型；无类型则 None → 回退失败上报
+                if *mutable {
+                    Some(format!(
+                        "public {s}mut prop {n}: {t} {{\n{i}get() {{ {stub} }}\n{i}set(_v) {{ {stub} }}\n}}",
+                        s = stat, n = name, t = ty, i = IND, stub = STUB
+                    ))
+                } else {
+                    Some(format!(
+                        "public {s}prop {n}: {t} {{\n{i}get() {{ {stub} }}\n}}",
+                        s = stat, n = name, t = ty, i = IND, stub = STUB
+                    ))
+                }
+            }
+            Kind::Func {
+                name,
+                params,
+                ret,
+                generic_params,
+                ..
+            } => {
+                let ps: Vec<String> = params
+                    .iter()
+                    .map(|p| self.t(*p).map(strip_default))
+                    .collect::<Option<_>>()?;
+                let gen_str = if generic_params.is_empty() {
+                    String::new()
+                } else {
+                    let names: Vec<&str> = generic_params
+                        .iter()
+                        .map(|g| g.split(" <: ").next().unwrap_or(g))
+                        .collect();
+                    format!("<{}>", names.join(", "))
+                };
+                let r = ret
+                    .clone()
+                    .map(|r| format!(": {}", r))
+                    .unwrap_or_else(|| ": Unit".to_string());
+                Some(format!(
+                    "public {s}func {n}{g}({p}){r} {{ {stub} }}",
+                    s = stat,
+                    n = name,
+                    g = gen_str,
+                    p = ps.join(", "),
+                    r = r,
+                    stub = STUB
+                ))
+            }
+            Kind::SecondaryConstructor { params, .. } => {
+                let ps: Vec<String> = params
+                    .iter()
+                    .map(|p| self.t(*p).map(strip_default))
+                    .collect::<Option<_>>()?;
+                Some(format!("public init({}) {{ {} }}", ps.join(", "), STUB))
+            }
+            // 其它成员（罕见）按常规渲染。
+            _ => self.t(m),
+        }
     }
 
     fn var_decl_name(&self, id: NodeId) -> Option<String> {

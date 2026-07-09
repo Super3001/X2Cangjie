@@ -70,6 +70,9 @@ pub enum Kind {
         is_singleton: bool,
         /// Kotlin 接口委托（`: MutableList<T> by delegateList`）：父接口 + 委托目标。
         supertype_delegations: Vec<SuperDelegation>,
+        /// Kotlin 多平台 `expect class`（common 侧仅声明、无实现）。渲染时成员
+        /// 全部降级为存根：字段→抛异常的计算 prop，方法/构造器→throw stub body。
+        is_expect: bool,
     },
     /// Kotlin secondary constructor: `constructor(...) : this(...) { ... }`.
     SecondaryConstructor {

@@ -1091,9 +1091,21 @@ impl Parser {
                 }
             }
         }
-        self.skip_modifiers();
-        self.eat_kw("constructor");
+        // 主构造器可紧跟类名（`class Foo(...)`），也可写在下一行并显式带 `constructor`
+        // 关键字（KMP `expect class YearMonth` \n `public constructor(...)` 形式，
+        // 类名与构造器间常隔 KDoc/换行）。跳过换行+修饰符后**仅当**见到 `constructor`
+        // 关键字或 `(` 才消费——否则回退，避免吞掉下一个顶层声明（如 `class Foo\nfun bar`）
+        // 的修饰符/内容。
+        let ctor_scan = self.pos;
         self.skip_newlines();
+        self.skip_modifiers();
+        self.skip_newlines();
+        if self.is_kw("constructor") || self.is_sym("(") {
+            self.eat_kw("constructor");
+            self.skip_newlines();
+        } else {
+            self.pos = ctor_scan;
+        }
         let mut ctor_params = Vec::new();
         if self.eat_sym("(") {
             self.skip_newlines();
@@ -1350,6 +1362,7 @@ impl Parser {
             .iter()
             .any(|m| m == "open" || m == "abstract" || m == "sealed");
         let is_value = mods.iter().any(|m| m == "value");
+        let is_expect = mods.iter().any(|m| m == "expect");
         Ok(self.g.add(Kind::Class {
             name: safe_name(&name),
             ctor_params,
@@ -1367,6 +1380,7 @@ impl Parser {
             companion_members,
             is_singleton,
             supertype_delegations,
+            is_expect,
         }))
     }
 
