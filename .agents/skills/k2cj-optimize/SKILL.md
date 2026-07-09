@@ -314,7 +314,7 @@ x2cj-skills 路径按 Claude Code 启动环境解析（同一份磁盘内容）�
 - R4: parser.rs build_also it-shadowing 修复, 1g 6 it redefinition→0, 新显现 5 undeclared type
 ```
 
-> 数字基线 221+35 = 256 测试用例(2026-07-07 R4 实测)。Phase 0 起点为 202+33 = 235 (2026-06-14)。
+> 数字基线 235+36 = 271 测试用例(2026-07-09 1g R5 实测)。Phase 0 起点为 202+33 = 235 (2026-06-14)。
 
 ## SOC 对齐
 

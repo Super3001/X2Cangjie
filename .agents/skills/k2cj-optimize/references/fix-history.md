@@ -342,3 +342,33 @@
 - **测试**: 240_receiver_function_type (Builder.() -> Unit + Builder.() -> Int 双向)。Phase 0 回归 224/224 single + 35/35 project 全绿 ✅
 - **1f 测量**: 1f project 模式翻译从 35 → 71 .cj 文件 (消掉 Module/KoinApplication/KoinConfiguration/ModuleDSL/ModuleExt 的 receiver-fn-type parse error)。剩 1 parse error (val <E : Enum<E>> Enum<E>.qualifier 带泛型扩展属性) + 9 编译错误。
 - **副作用**: 翻译产物 `extend Module<R,T1,T2,...>` (Module 非泛型类,语义错误) — 这是 parse_fun L710 generic_params.clear() 的 bug,清空了函数自身泛型参数。R2 候选 (1f 编译错误的潜在根因之一)。
+
+### 2026-07-09 — 指标口径修正 — 1g "10 errors" 是 cjc 打印截断误计（非修复，口径决策）
+
+- **目标**: 1g full-ksoup（R2-R4 测量全部受影响）
+- **发现**: cjc 默认 `--error-count-limit 8`——日志末行 "1460 errors generated, 8 errors printed"。R2-R4 把"打印出的 8 个 error 块 + 2 条 cjpm Error 消息"数成 10。真实错误数 R4 时为 1460。
+- **决策**: 自 R5 起所有 target 测量管线在 cjpm.toml 加 `compile-option = "--error-count-limit all"`，以 "N errors generated" 为唯一口径。方向是把口径改严（数字变难看），与"改口径让数字好看"的风险相反；仍记决策日志待会签。
+- **教训**: "剩 10 个错" 的收敛叙事全部作废；1g 实际仍有 ~1400 语义错误，语义战役未打完。任何 "X errors printed" 截断输出不得直接当总数。
+
+### 2026-07-09 — STDLIB_GAP+RENDER — undeclared-supertype 簇（Entry/AutoCloseable/MutableList/MutableMap 父类型声明失败）
+
+- **目标**: 1g full-ksoup (R5)
+- **行动簇**: 5 个核心类的父类型未声明（`Attribute <: Map.Entry`、`CharacterReader <: AutoCloseable`、`NodeList/Nodes/ParseErrorList <: MutableList`、`IdentityHashMap <: MutableMap`），类声明失败级联全文件。
+- **修复**（4 处，全部 235/235 single + 36/36 project 回归通过 ✅）:
+  1. **parser.rs parse_class 父类型位**: 限定名折叠 `Map.Entry`→`Entry`、`MutableMap.MutableEntry`→`MutableEntry`（stdlib 嵌套接口，engine 嵌套提升注册表不覆盖）。
+  2. **parser.rs map_type**: 泛型分支 `Map.Entry<K,V>`/`MutableMap.MutableEntry<K,V>` → 元组 `(K, V)`（仓颉 HashMap 迭代元素类型）；非泛型分支裸名折叠同父类型位。
+  3. **stubs.rs**: 新增 4 个 stub — AutoCloseable（带 `func close(): Unit`）、MutableList（非泛型 marker）、MutableMap+MutableCollection、Entry+MutableEntry（marker，父类型位泛型实参已被 parse 丢弃故用非泛型）。
+  4. **render.rs + heuristics.rs**: `override_provably_unmatched` — 类的全部父类型都是已知成员集接口（marker=无成员、AutoCloseable={close}、ToString={toString}）且成员名不命中时剥掉 `override`（否则 marker 接口一进来 error-71 原地不动）。坑: 嵌套类（Element 内 NodeList）成员的祖父节点是外层类，判定所属类必须先查直接父节点再查祖父。
+- **层级**: L1×3 + L2（override 剥离跨 render/heuristics）
+- **测试**: 241_autocloseable、242_mutable_list_marker、243_map_entry_supertype
+- **1g 测量**: 1458 → 1411（全量口径）。undeclared-supertype 5 根因清零；override 簇 71→36；undeclared type 44→26（剩 ArrayDeque/IOException/FilterResult/T 等，R6 候选）。
+
+### 2026-07-09 — PARSER — 合并翻译错误恢复 depth 计数 bug（错误点在嵌套花括号内时丢弃后续全部文件）
+
+- **目标**: 2a kotlinx-datetime (R0 基线测量被阻断时发现)
+- **错误**: project 模式翻译 55 文件只出 1 个。DateTimePeriod.kt 的多行函数类型带命名参数 `construct: (\n years: Int, ...\n) -> T` parse 失败后，恢复逻辑跳过后续 50+ 文件。
+- **根因**: parser.rs parse_program 错误恢复以 `depth == 0` 时遇 `package` 为边界，但 depth 从错误点（嵌套花括号内）起算 0，退出外层花括号后变负 → 永不等于 0 → 跳到 EOF。
+- **修复**: 边界判定 `depth == 0` → `depth <= 0`（parser.rs +1 行语义 +注释）。
+- **层级**: L1
+- **测试**: proj_parserecovery（Choker.kt 含不可解析构造 + Ok.kt/Main.kt 验证后续文件存活）
+- **2a 测量**: 翻译 1 → 53/55 文件。11 个 PARSE ERROR 点（多行函数类型带命名参数为首簇）。编译层: 2 文件 lex 错（未闭合字符串/插值）遮蔽全部；排除后 109 错仍全为 parse 层（44 泛型位关键字泄漏 + 29 modifier 冲突 + 14 unexpected modifier + 10 顶层 var 未初始化）。语义层未揭示 — 2a R1 候选簇。

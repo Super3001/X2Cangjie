@@ -10,9 +10,14 @@
 
 ```
 Phase 0       Phase 1                          Phase 2       Phase 3       Phase 4
-[✅]          [✅][✅][✅][ ][✅][ ][ ]        [ ][ ][ ]     [ ][ ][ ]     [ ][ ][ ]
-                                ↑1e 核心收敛
+[✅]          [✅][✅][✅][ ][✅][ ][ ]        [⏳][ ][ ]    [ ][ ][ ]     [ ][ ][ ]
+                                ↑1e 核心收敛    ↑2a datetime R0
 ```
+
+> ⚠️ **指标口径修正（2026-07-09，待会签）**: cjc 默认只打印 8 个错误（"N errors
+> generated, 8 errors printed"）。1g R2-R4 记载的"10 errors"是打印截断误计，R4 真实
+> 错误数 1460。自 R5 起所有测量管线 cjpm.toml 加 `compile-option = "--error-count-limit all"`，
+> 以 "N errors generated" 为唯一口径。方向为改严。1g 语义战役未打完。
 
 ---
 
@@ -31,10 +36,10 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1a | ksoup-exception | ksoup | 5 | ✅ | 0 | data class, sealed, enum |
 | 1b | ksoup-safety+io | ksoup | 5 | ✅ | 0 | companion, extension, lambda |
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
-| 1d | ksoup-parser | ksoup | 16 | ⏳ | R4: 待重测 (1g 全量 10 error, it-shadowing 消掉, 新 5 undeclared type 显现) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
+| 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R4: 10 (3 redefinition 参数名 shadowing + 5 undeclared type 未覆盖 stdlib + 2 cjpm) | R3 setter/optional-param 消掉; R4 it-shadowing 消掉(6处), 新 5 undeclared type 显现(MutableMap/MutableList/Entry/AutoCloseable); 剩 3 redefinition(参数名 shadowing: append×2+attributeKey) | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R5: **1411**（全量口径; R4 之前的"10"是打印截断误计,真实 ~1460） | R5 undeclared-supertype 簇清零(stub+折叠+override剥离), override 簇 71→36; 剩余大簇: undeclared identifier 233 / mismatched types 229 / not-member-of-class 145 / not-member-of-enum 93 / invalid-binary-op 80 — 语义战役 R6+ | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -44,7 +49,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime | ~80 | 🔒 | - | - | Phase 1 无子模块，全新完整项目 |
+| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R0: lex 层遮蔽 (2 文件未闭合字符串); 探针 109 全 parse 层 | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; 翻译 53/55; R1 候选簇: ①多行函数类型带命名参数(11 个 PARSE ERROR 之首) ②字符串/插值渲染未闭合(2 文件) ③泛型位关键字泄漏(44) ④modifier 冲突(29+14) |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -72,6 +77,26 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R5 完成 — 指标口径修正 + undeclared-supertype 簇清零
+
+- **⚠️ 指标口径修正（本轮最重要产出）**: R4 编译日志末行 "**1460 errors generated, 8 errors printed**"——cjc 默认 `--error-count-limit 8`。R2-R4 的"10 errors"= 8 个打印错误块 + 2 条 cjpm 消息，是截断误计。R2 的"1598→10 (99.4%)"叙事作废（1598 亦是 errors generated 口径，10 不是）。自 R5 起测量管线统一加 `compile-option = "--error-count-limit all"`。**该口径变更方向为改严，仍待独立复核会签**。
+- **R5 行动簇**: undeclared-supertype — 5 个核心类父类型声明失败（Attribute <: Map.Entry / CharacterReader <: AutoCloseable / NodeList,Nodes,ParseErrorList <: MutableList / IdentityHashMap <: MutableMap）。
+- **R5 译器修复（4 处，详见 fix-history 2026-07-09）**: ① parser 父类型位限定名折叠（Map.Entry→Entry 等）② map_type 泛型位 Entry 系→元组 (K,V)、非泛型位裸名折叠 ③ stubs.rs +4（AutoCloseable/MutableList/MutableMap+MutableCollection/Entry+MutableEntry marker）④ render override 剥离（override_provably_unmatched，父类型全为已知成员集接口且不命中时剥 override；坑: 嵌套类成员先查直接父节点）。
+- **附带修复**: parser 合并翻译错误恢复 depth bug（`depth == 0`→`<= 0`，错误点在嵌套花括号内时原逻辑跳 EOF 丢弃后续全部文件）— 2a 测量被阻断时发现，测试 proj_parserecovery。
+- **1g 测量（全量口径）**: 1458 → **1411**。undeclared-supertype 5 根因清零；override 簇 71→36；undeclared type 44→26。
+- **剩余大簇（R6 候选）**: undeclared identifier 233（lowerCase 17/FilterResult 16/NamespaceHtml 14…）/ mismatched types 229 / not-member-of-class 145 / not-member-of-enum 93 / invalid binary op 80 / no-matching-call 55。热点文件: element.cj 248 → 重测待更新, evaluator.cj 147, html_tree_builder.cj 126, node.cj 126。
+- **靶向测试**: 241_autocloseable / 242_mutable_list_marker / 243_map_entry_supertype / proj_parserecovery。
+- **回归**: 235/235 single + 36/36 project 全绿。
+- **每错成本注**: 本轮消 47 错 + 修正口径 + 解锁 2a 测量。R2-R4 的"每轮消 6-8 错"成本曲线基于误计口径，同样作废——真实曲线待 R6 起重建。
+
+### Phase 2 — 2a kotlinx-datetime (2026-07-09) ⏳ R0 基线
+
+- **源**: `C:/Codes/kotlin/kotlinx-datetime`（shallow clone, Kotlin/kotlinx-datetime）。scope: core/common/src 55 文件（common 主源，不含 test）。
+- **翻译**: 53/55 文件（恢复修复后；此前 1/55）。11 个 PARSE ERROR 点，每个丢掉所在文件错误点之后的声明。
+- **编译 R0**: lex 层遮蔽 — local_time_format.cj + utc_offset_format.cj 未闭合字符串/插值（4 errors 即停）。排除 2 文件探针: **109 errors 仍全为 parse 层**（44 泛型位关键字泄漏 + 29 modifier 冲突 + 14 unexpected modifier + 10 顶层 var 未初始化 + 6 函数缺 body）。语义层未揭示。
+- **R1 候选簇（按杠杆排序）**: ① 多行函数类型带命名参数 `construct: (\n years: Int,…\n) -> T`（PARSE ERROR 首簇，DateTimePeriod/LocalDate 等 11 处）② 字符串转义/插值渲染未闭合（2 文件 lex 阻断）③ 泛型位关键字泄漏（44，疑 variance/where 输出侧）④ modifier 冲突（29+14）。
+
 
 ### ksoup R0 (2025-06-14) — 已存档
 
