@@ -40,7 +40,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1b | ksoup-safety+io | ksoup | 5 | ✅ | 0 | companion, extension, lambda |
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
-| 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
+| 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
 | 1g | ksoup-main | ksoup | 87 | ⏳ | R7: **1355** | R6-R7 委托簇打穿(1411→1355): List<T> 真实映射+转发+prop转渲染+override剥离成员集+父类泛型保留; R8 候选: enum-body截断簇A(~90)/静态import簇D(~60)/notEmpty簇E(~49)/NodeList直接实现型 | C:/Codes/kotlin/ksoup |
 
@@ -85,7 +85,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 - **审计裁决**: 继续当前打法（近 5 轮修复均为真实语言特性泛化：by 委托/类级 variance/expect class/插值折叠；切换 1g→2a 有预注册判据，程序清白），但带三条强制修正:
   1. **(a) 2a 收官后必须回 1g 正面攻 mismatched/Option ~229+ 硬簇**（该簇自 2026-07-06 挂候选至今从未被正面攻击——"逼近目标 vs 养指标"的分水岭），禁止再开新 parse 富矿 target（exposed/koin 全量继续锁定）。
-  2. **(b) 给至少一个 ✅ 目标（1a/1b/1e）跑 x2cj-eval 或运行时验证**填上空列——"编译 0 错 + throw stub"不能证明翻译能力。
+  2. **(b) 给至少一个 ✅ 目标（1a/1b/1e）跑 x2cj-eval 或运行时验证**填上空列——"编译 0 错 + throw stub"不能证明翻译能力。**✅ 已完成 2026-07-10（1e 运行时验证通过，详见历史记录当日条目）**。
   3. **(c) 轮次编号统一**: 自本条起 state 轮标以 target 战役轮（2a R1/R2/R3...）为准，auto 轮另标（auto Rn/15）; 产物目录偏移已注记。✅ 的"分账"语义（1c/1e 剪枝）保留但不得再扩大化。
 - **三张地形图重估**: ① 遮蔽层: 1g=语义长尾层(1355), 2a=parse 收尾（语义层未揭示, 防"5=收敛"误判）② 经济曲线: 1g 每错成本已劣化（R6 -8/R7 -48 于 1355 基数）, 2a 极优（R2 -93/R3 -13）③ portfolio: 2a 语义揭示后若为长磨盘, 按 (a) 转 1g Option 簇分批（先 getOrThrow-on-unwrapped 子模式, 再 ==/!= 可空归一）。
 - **stub 负债注记**: 剪枝轮候选 9 项全部 🔒 未排期, expect 两类存根新增——负债在涨, 2a 收敛后剪枝轮排期提上日程。
@@ -93,6 +93,15 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### Phase 1 — 1e ktor-io (2026-07-10) ✅ 运行时验证补齐（审计修正 b）
+
+- **动机**: 1e 于 06-27 收敛后译器已大改（1g R5-R7 委托/override 剥离、2a R1-R4 parse 修复），需证明当前译器在 1e 语料上未回归且译文运行语义正确。
+- **方法**: 副本二进制重译核心 5 文件 → `output/target_1e_verify/`（脚本 = translate_1e.py 改 BIN/OUT 两行）→ cjpm build → 换行为断言 main.cj → cjpm run 人工核对输出。
+- **三态**: 重译 5/5 OK；build **0 errors**（3 个 unused warning）；run 通过，18 项行为断言输出全部符合 Kotlin 语义。
+- **核对点**: ① LineEnding/ByteOrder enum toString+`==`（Default/Lenient、BIG/LITTLE_ENDIAN 正确）② LineEndingMode value class→struct: bitmask `contains`/`plus` 正确（Any⊇CR true, CR⊉Any false, CR+LF⊇CRLF false）③ toString when-分派: CR/LF/CRLF 走字面分支, 组合值走 else 过滤分支且输出 `[CR, LF]`/`[CR, LF, CRLF]` 与 Kotlin `listOf.filter.toString()` 逐字一致 ④ toIntOrFail: 42 恒等返回, Int64.Max 抛 IllegalArgumentException 且消息插值正确 ⑤ 注解类降级为普通类, PublicAPICandidate.version 属性保真。
+- **已知语义偏差（记录, 非回归）**: Kotlin `Int.MAX_VALUE`(2³¹-1) 阈值因 Int→Int64 映射变为 `Int64.Max`——(2³¹-1, 2⁶³-1) 区间在 Kotlin 抛异常、译文不抛；`toInt()` stub 为恒等（无 32 位截断）。属 Int 宽度映射决策的已知后果。
+- **结论**: 1e 在当前译器下仍收敛且运行时语义正确，Phase 1 首个"编译 0 错 ≠ 翻译能力"质疑被运行时证据回应。未改译器代码、未 commit。
 
 ### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R7 完成 — 委托簇收尾，三接缝合上（auto R2/15）
 
