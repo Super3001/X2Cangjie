@@ -52,7 +52,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime (2a) | 55 (core/common/src) | ⏳ | R4: **parse 0 / 语义层首曝 1237** | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R4 清完最后 4 parse 根因(split_top `->` 透传/局部扩展函数/getter-only/匿名对象存根); 语义大簇: KSerializer 族 258 中 ~91(依赖边界,剪枝候选)/undeclared 243(require×39 映射候选)/override 103/泛型实参丢失 62/extend-shadow 60 |
+| kotlinx-datetime (2a) | 43 (剪 serializers 后) | ⏳ | R5: **1070** | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R5 require族真实映射(39→0) + serialization 剪枝(12文件, 重审条件在 translate_2a.py 头注); R6 候选: supertype泛型实参丢失62(单根因疑)/override equals-hashCode 剥离(103部分, 1g 复用)/extend-shadow 60/undeclared id 189 |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -134,6 +134,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 - **靶向测试**: 241_autocloseable / 242_mutable_list_marker / 243_map_entry_supertype / proj_parserecovery。
 - **回归**: 235/235 single + 36/36 project 全绿。
 - **每错成本注**: 本轮消 47 错 + 修正口径 + 解锁 2a 测量。R2-R4 的"每轮消 6-8 错"成本曲线基于误计口径，同样作废——真实曲线待 R6 起重建。
+
+### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R5 完成 — require 族映射 + serialization 剪枝（auto R7/15）
+
+- **两件正交工作打包**: ① require/check/error/requireNotNull/checkNotNull 前置条件族 → render_calls 展开为真实语义（IAE/ISE throw, 探针确认 std.core 构造器），**非 stub**，全语料复用; require×39→0。② kotlinx.serialization 依赖边界剪枝——translate_2a.py 管线剔除 serializers/ 12 文件（裁决理由+重审条件在脚本头注; 同 1c/1e 先例）; KSerializer 族×91+级联清零。
+- **测量**: 1237 → **1070**（-167, 13.5%）。scope 变为 43 .kt。
+- **残留边界**: TimeZone.kt 非注解位 KSerializer 工厂返回类型 2 处（同边界, 记录不处理）。
+- **靶向测试**: 256_require_check。回归 248/248 + 36/36 全绿。
+- **R6 候选**: supertype 泛型实参丢失×62（R4 已见 raw Comparable 单根因线索）/ override equals×20+hashCode×20 通用剥离（1g 剩 28 override 可复用）/ extend-shadow×60（extend Instant×40）/ undeclared id×189（Directive×35）。产物: 2a R5 = target_2a_r6/。
 
 ### Phase 2 — 2a kotlinx-datetime (2026-07-10) ⏳ R4 完成 — parse 层收官, 语义层首曝 1237（auto R6/15）
 

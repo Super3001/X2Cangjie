@@ -1,0 +1,6 @@
+5
+ok
+IAE: must be positive, got -1
+IAE: Failed requirement.
+ISE: state broken
+ISE: negative not allowed: -5

@@ -498,3 +498,27 @@
   - 热点文件: instant×25、deprecated_instant×20、year_month_range×14、local_date_range×13、utc_offset_format×12、number_consumer×12、time_zone×11
 - **验证**: cargo build --release 零 error；全量 single 回归（split_top/parse_var_decl 改动面广——重点校验）；抽查 251/248/247 + 210。
 - **已知残留/风险**: ① 匿名对象为 make-it-parse 存根（构造抛异常），完整解法=提升为具名类（L3，视 R5 是否需要）。② getter-only 退化为字段丢失「每次访问重算」语义 + 抽象属性覆盖关系（datetime 常量 getter 无影响；若后续遇有副作用 getter 需升级为仓颉 prop）。③ R5 语义层 1237 错为独立多簇——最大可攻簇: 序列化类型未 stub（KSerializer 族 ~91，加 stub 库或剪枝 serializer 层）、override-supertype 失配×103、supertype 泛型实参丢失×62、extend-shadow×60。④ split_top 的 `->` 透传仅按字符对，不处理 `- >`（带空格，Kotlin 无此写法）——datetime 无此形，安全。
+
+### 2026-07-10 — RENDER_CALLS — 2a R5① Kotlin 前置条件族 require/check/error 真实语义映射
+
+- **目标**: 2a kotlinx-datetime；R5 语义层 `undeclared identifier 'require'`×39（全语料复用，datetime core/common/src 里 `require(` 用 50 处/17 文件，无 check/error/requireNotNull）。Kotlin stdlib 前置条件函数无仓颉对应、原样输出即 undeclared。
+- **修复**（render_calls.rs `render_call` NameRef 分支，L1；展开为真实语义**非 stub**）:
+  - `require(cond)` → `if (!(cond)) { throw IllegalArgumentException("Failed requirement.") }`
+  - `require(cond) { lazyMsg }` → `if (!(cond)) { throw IllegalArgumentException(<lazyMsg>) }`（新增 helper `extract_lazy_message` 提取 lambda 消息表达式；多语句体退化 IIFE）
+  - `check(...)` 同上但 `IllegalStateException` / 默认 `"Check failed."`
+  - `error(msg)` → `throw IllegalStateException(msg)`
+  - `requireNotNull/checkNotNull(x[, {msg}])` → `(match (x) { case Some(_v) => _v; case None => throw IAE/ISE(msg) })`（表达式位解包，datetime 未用但补全）
+  - 三处均加 `!self.is_user_func(original)` 守卫（同 abs/max 约定），避免覆盖用户同名函数。仓颉 `if` 无 else 为 Unit，语句/表达式位皆合法（require 返 Unit）。`IllegalArgumentException`/`IllegalStateException` 为 std.core 真实类型（探针验证 String 构造器 + `.message`）。
+- **层级**: L1（render_calls.rs 单文件，纯调用映射）
+- **测试**: 256_require_check（require 带/不带 lazy 消息、check 带消息、error；catch 验证异常类型 IAE/ISE 与消息文本）。翻译→cjc 编译→运行→exact-match 全绿（`5/ok/IAE: must be positive, got -1/IAE: Failed requirement./ISE: state broken/ISE: negative not allowed: -5`）。
+- **2a 测量**: `require` undeclared ×39 → **0**（全清）。输出形如 `if (!((value.isNone()) || (value >= 0 && value <= 99))) { throw IllegalArgumentException("...") }`。
+- **已知残留**: lazyMessage 直接用 lambda body 表达式（datetime 全为 String 插值，无需 `.toString()`）；若后续语料出现非 String 消息需补 `.toString()`。
+
+### 2026-07-10 — SCOPE/PIPELINE — 2a R5② kotlinx.serialization 依赖边界剪枝（translate_2a.py）
+
+- **裁决**: `core/common/src/serializers/`（12 .kt）是 **kotlinx.serialization 集成层**——每个文件实现 `KSerializer<T>`，依赖外部库的 `SerialDescriptor`/`Decoder`/`Encoder`（不在本源码树）。这是**依赖边界**（同 1c/1e 先例：外部库不 stub、不硬翻）。R5 语义层里 KSerializer×31 + SerialDescriptor×20 + Decoder×20 + Encoder×20 = 91 直接 undeclared 全部源自这 12 文件，是评估 datetime core 本身的纯噪声。
+- **做法**: 新增 `output/translate_2a.py` 测量管线（`--check`/`--validate` + `-o OUTDIR`，argparse）: 把 `core/common/src` 复制到临时目录 → 剔除 `serializers/` 子目录 → 调**项目模式**翻译（`exe <staged_dir> -o OUT`，自动产 cjpm.toml/main.cj）。剪枝在临时副本上做，绝不改真实源码树；覆盖前备份旧输出（file_safety）。
+- **重审条件**（写进脚本头注释）: 当 (a) 仓颉出 serialization 库（有 KSerializer/Decoder/Encoder 对应）可映射，**或** (b) 本管线翻译了 kotlinx.serialization 本身（集成层有真超类型可满足）——则 un-prune 重审。
+- **主源文件不受影响**: `LocalDate.kt` 等的 `@Serializable(with=…)` 注解被 parser 跳过（注解丢弃），剪 serializers/ 不破坏它们。**残留（报告不处理）**: 主源 `TimeZone.kt:173/273` 在**非注解位**写了 `kotlinx.serialization.KSerializer<T>` 工厂返回类型 → `time_zone.cj:20/46` 2 处残留 undeclared KSerializer，同属该边界，out of scope。
+- **2a 测量（R5 1237 → R6）**: 剪枝 12 文件（55→43 .kt，输出 42 .cj，0 serializer .cj 泄漏）+ require 映射，合计 **1237 → 1070（net -167）**。清零 require×39 + KSerializer 族 ×91 + 12 serializer 文件的全部级联错误。
+- **R6 语义层残余 top 簇**（下轮候选）: undeclared identifier×189（Directive×35/parse×12/it×9/NoSuchElementException×6/Random×6）、undeclared type×153（AssignableField×10/Companion×10/DateTimePeriod×8/LongProgression×8/Copyable×6）、override 无 supertype×103（equals×20/hashCode×20/formatter×13/parser×13）、mismatched types×85、not a member of class×68（Object×38）、generic type 缺实参×62、extend-shadow×60（extend Instant×40/minus×20/plus×16）、ambiguous match×53（plus×33）、invalid binary operator×43、no matching ctor×32、used-before-init×22、enum pattern×19。热点文件 instant/deprecated_instant/*_range/utc_offset_format/number_consumer。

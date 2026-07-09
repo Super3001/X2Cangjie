@@ -9,6 +9,19 @@ use crate::node::*;
 impl Engine {
     // ============ 调用渲染 ============
 
+    /// 提取 `require(cond) { lazyMsg }` 里 lazyMessage lambda 的消息表达式。
+    /// 单表达式体直接返回；多语句体退化为 IIFE。非 lambda 参数原样渲染。
+    fn extract_lazy_message(&self, arg: NodeId) -> Option<String> {
+        if let Kind::Lambda { body, .. } = self.g.kind(arg) {
+            let inner = self.render_block_inner(*body, 0)?;
+            if inner.contains('\n') {
+                return Some(format!("({{ => {} }})()", inner));
+            }
+            return Some(inner);
+        }
+        self.t(arg)
+    }
+
     pub(crate) fn render_call(&self, callee: NodeId, args: &[NodeId]) -> Option<String> {
         if let Kind::NameRef { original, .. } = self.g.kind(callee) {
             if original == "Char" && args.len() == 1 {
@@ -33,6 +46,51 @@ impl Engine {
                     .map(|x| self.render_arg(*x))
                     .collect::<Option<_>>()?;
                 return Some(format!("({})", a.join(", ")));
+            }
+            // Kotlin stdlib 前置条件族 → 仓颉真实语义展开（无对应 std 函数，原样输出会
+            // undeclared）。require/check 断言，error 直接抛，requireNotNull/checkNotNull 解包。
+            // 仓颉 `if` 无 else 为 Unit，语句/表达式位皆合法（require 返 Unit）。
+            if matches!(original.as_str(), "require" | "check")
+                && (args.len() == 1 || args.len() == 2)
+                && !self.is_user_func(original)
+            {
+                let (exc, default_msg) = if original == "require" {
+                    ("IllegalArgumentException", "Failed requirement.")
+                } else {
+                    ("IllegalStateException", "Check failed.")
+                };
+                let cond = self.t(args[0])?;
+                let msg = if args.len() == 2 {
+                    self.extract_lazy_message(args[1])?
+                } else {
+                    format!("\"{}\"", default_msg)
+                };
+                return Some(format!("if (!({})) {{ throw {}({}) }}", cond, exc, msg));
+            }
+            if original == "error" && args.len() == 1 && !self.is_user_func(original) {
+                let msg = self.t(args[0])?;
+                return Some(format!("throw IllegalStateException({})", msg));
+            }
+            if matches!(original.as_str(), "requireNotNull" | "checkNotNull")
+                && (args.len() == 1 || args.len() == 2)
+                && !self.is_user_func(original)
+            {
+                let exc = if original == "requireNotNull" {
+                    "IllegalArgumentException"
+                } else {
+                    "IllegalStateException"
+                };
+                let val = self.t(args[0])?;
+                let msg = if args.len() == 2 {
+                    self.extract_lazy_message(args[1])?
+                } else {
+                    "\"Required value was null.\"".to_string()
+                };
+                // 解包 Option：Some(v)=>v 否则 throw（表达式位，返回非空值）。
+                return Some(format!(
+                    "(match ({}) {{ case Some(_v) => _v; case None => throw {}({}) }})",
+                    val, exc, msg
+                ));
             }
             if (original == "maxOf"
                 || original == "minOf"
