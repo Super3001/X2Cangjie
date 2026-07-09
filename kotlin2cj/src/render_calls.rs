@@ -210,6 +210,24 @@ impl Engine {
             }
             "toChar" if args.is_empty() => Some(format!("Rune(UInt32({}))", b)),
 
+            // Kotlin null-aware 扩展 `T?.isNullOrEmpty()`（CharSequence/Collection 皆有）：
+            // 语义 = receiver 为 null **或** 空。绝不能对可空接收者插 `.getOrThrow()`
+            // （那会在 null 时抛异常，正好抹掉 null 分支），故用**原始未解包**接收者。
+            // - 可空接收者：`((x?.isEmpty()) ?? true)`——None 短路成 true，Some 走 .isEmpty()；
+            //   对 String 与 Collection 同构（两者都有 isEmpty()）。
+            // - 非空接收者（已 smart-cast rebound 或本就非空）：退化为 `x.isEmpty()`。
+            // 根因：此前 isNullOrEmpty 无映射被透传，且接收者被 getOrThrow 解包，
+            // 导致 `x.getOrThrow().isNullOrEmpty()`——isNullOrEmpty 非仓颉成员 → Validate
+            // 等宿主函数体编译失败 → 其全部调用点级联报 "no matching declaration"（1g R15 簇 E）。
+            "isNullOrEmpty" if args.is_empty() => {
+                let raw = self.atom(base)?;
+                if !safe && self.is_nullable_expr(base) && !self.is_null_check_rebound(base) {
+                    Some(format!("(({}?.isEmpty()) ?? true)", raw))
+                } else {
+                    Some(format!("{}.isEmpty()", raw))
+                }
+            }
+
             // ---- String 方法 ----
             "padStart" | "padEnd"
                 if self.looks_string(base) && (args.len() == 1 || args.len() == 2) =>

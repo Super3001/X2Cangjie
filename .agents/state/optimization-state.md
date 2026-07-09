@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R13: **1135** | Option 战役四批累计(1243→1135): over-unwrap 清零/under-unwrap 79→40/eq 归一 76→18/==语义闭环 5/8 类(263 运行时断言证明); 残留 3 类 + when-is equals 阻塞于 flow-sensitive smart-cast(独立特性候选); 余: enum-body截断A/notEmpty E/under-unwrap L3 桶 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R15: **1087**（auto 15 轮起点 1411, -23%） | Option 战役四批(over-unwrap 清零/under-unwrap 79→40/eq 76→18/==闭环 5/8, 263 运行时断言) + R15 isNullOrEmpty 空安全映射(-59, 证伪"形参过度可空化", 真根因=宿主体级联); 下一战役候选: enum-body截断A(~90, L3)/flow-sensitive smart-cast(闭 equals 3 类+D-cast 桶)/父类型位成员合成(剪枝轮排期件) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g 簇 E (2026-07-10) — isNullOrEmpty 空安全映射, 证伪"过度可空化"（auto R15/15, 终轮）
+
+- **证伪（本轮主要价值）**: R6 存证"notEmpty 形参过度可空化"不成立——Kotlin 源本就 `String?`, `?String` 翻译正确且 cjc 实参隐式协变。**真根因**: `isNullOrEmpty()` 无映射透传 + 可空接收者误插 getOrThrow → 宿主函数体编译失败 → 44 调用点级联 no-matching-declaration。**方法论沉淀: no-matching-declaration 大簇优先怀疑宿主体级联, 而非调用点/签名**。
+- **修复**: render_calls 增 isNullOrEmpty arm——原始未解包接收者, 可空 `((x?.isEmpty()) ?? true)` / 非空 `x.isEmpty()`。
+- **测量**: 1g 1146→**1087**（-59, notEmpty 44→0 + isNullOrEmpty 7→0, 零新表面; 注: R14 记 1136、本轮重译起点 1146, ±10 级重译漂移, 以各轮 pre/post 差为准）; 2a 967→964。
+- **测试**: 264_param_nullability。回归 256/256 + 36/36 全绿。
+- **auto mode 15 轮完成**。
 
 ### 剪枝轮 stub 存量整改 (2026-07-10) — 查证 6 组, 0 退役 / 6 暂封·排期（auto R14/15）
 

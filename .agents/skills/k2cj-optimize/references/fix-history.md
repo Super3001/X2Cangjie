@@ -672,3 +672,17 @@
   - **已闭环（5）**: attribute / attributes / safelist / tag_set（显式 `let x = other as T` 绑定，TypeCast 修复直达）+ node（refEq2 身份——jsoup Node.equals 本即 `this === o` 身份，语义正确）。
   - **残留（3，下轮候选）**: tag / nodes / identity_hash_map——`other as T` **裸语句 smart-cast** 后 `other.member`（tag `other.options`、id_map `other.value`）/ `other[i]`（nodes 集合下标）仍作用在 `Object`（未向下转型）。根因 = **flow-sensitive smart-cast 未跟踪**（`if(other is T)`/`other as T` 后 `other` 应被视为 T）——独立深层特性，非本桶原语，留下轮（同时可闭 262-Box 的 when-is 场景）。
 - **审计**: R8 剥离 equals/hashCode 的 -96，结构语义对 **5/8** 类闭环 + 机制经 263 运行时证明；3 类残留待 smart-cast 跟踪。
+
+### 2026-07-10 — RENDER — auto R15 簇 E：Kotlin null-aware 扩展 `isNullOrEmpty()` 映射（形参可空性证伪→真根因）
+
+- **战役**: auto R15（终轮），1g 簇 E「形参过度可空化」。基线 output/target_1g_r14 = 1136（本机 error 行计 1146）。
+- **诊断证伪（以新鲜诊断为准，推翻 R6 存证前提）**: R6 断言 `Validate.notEmpty(string: String)` Kotlin 原型**非空**、启发式过度可空化把形参升 `?`。核查 Kotlin 源 `helper/Validate.kt`——`fun notEmpty(string: String?)` 形参**本就可空**，仓颉侧 `?String` **翻译正确**，不存在过度可空化。探针实证 cjc 1.0.5：`String → ?String` 在函数调用实参处**隐式协变**（`V.notEmpty(nonNullStr)` 直通），两 overload 并存亦不歧义。故「44 个非空实参不匹配可空形参」的因果**不成立**。
+- **真根因（级联，非可空性）**: `Validate.notEmpty`/`notEmptyParam` 体内 `string.isNullOrEmpty()`（Kotlin `CharSequence?.isNullOrEmpty()` 空安全扩展）被翻译成 `string.getOrThrow().isNullOrEmpty()`——**两处错**：① `isNullOrEmpty` 无映射被透传，非仓颉 String 成员；② 可空接收者被 `render_call_recv` 插 `.getOrThrow()`（在 null 时抛异常，正好抹掉扩展存在意义的 null 分支）。宿主函数体编译失败（`isNullOrEmpty is not a member of struct String`×7）→ 其 decl 被污染 → **44 个调用点级联** `no matching function declaration for function call notEmpty`。escape×3/selectNodes×2 等经查为**各自独立**的宿主体编译失败级联（不同函数，非同根），本轮不动。
+- **修复（render_calls.rs::render_member_call 新增 arm）**: `x.isNullOrEmpty()`（无参）→ 用**原始未解包**接收者（绝不插 getOrThrow）：可空且非 rebind 且非 `?.` → `((x?.isEmpty()) ?? true)`（None 短路成 true、Some 走 .isEmpty()，对 `CharSequence?` 与 `Collection?` 同构）；否则（已 smart-cast 非空/本就非空）→ `x.isEmpty()`。探针证实 `?.` 不能作用于非 Option（故按可空性分支）。仅映 `isNullOrEmpty`（实测唯一需求，`isNullOrBlank` 语料 0 命中，按 stub 最小化铁律不预加）。
+- **层级**: L1（单文件 render_calls.rs 单 arm）。
+- **测试**: 新增 264_param_nullability——非空形参契约 + null-aware 扩展闭环：`notEmpty(s: String?)` 用 isNullOrEmpty；非空实参直通、`""` 空、null/Some、以及 `List<Int>?` 集合变体；翻译→cjc→运行 exact-match 6 行全绿（含运行时语义断言 true/false/false/true/true/false）。
+- **测量**:
+  - **1g（主战果）**: 1146 → **1087（-59 error 行）**。`notEmpty` no-matching **44→0**、`isNullOrEmpty is not a member` **7→0**；错误类型分布 diff **零新增/零上升**（纯下降，无新表面），-59 = 44 簇 + 7 体错 + 8 下游级联消解。
+  - **2a（外溢）**: 967 → **964（-3，改善）**。datetime 侧 isNullOrEmpty 少量命中，无回归（远低于 +10 阈值）。
+- **回归**: 单文件 255/255 → **256/256** 全绿三阶段（翻译/编译/运行，含新 264）。
+- **分账**: 无新表面需适配——形参可空性**未收紧**（诊断证伪，`?String` 本就正确），故不存在「调用点真传 Option 被收紧误伤」的场景；纯属扩展方法映射补全 + 接收者解包纠偏。
