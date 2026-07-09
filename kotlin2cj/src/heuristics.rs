@@ -108,6 +108,30 @@ impl Engine {
         if let Some(ty) = self.expr_type_name(id) {
             return ty.starts_with('?');
         }
+        // 局部变量无声明类型时，由初始化表达式推断可空性（under-unwrap 覆盖缺口）:
+        // `var parent = parent()`（方法返回 ?T）/ `let attrs = startTag.attributes`（字段 ?T）。
+        // expr_type_name(Call) 已能取方法返回类型；is_nullable_expr(Member) 已能查字段类型。
+        // 仅对 Call/Member 初值递归（不含 NameRef，避免 `var x = x` 自引用环）。
+        if let Kind::NameRef { decl: Some(d), .. } = self.g.kind(id) {
+            if let Some(&decl_id) = self.decl_index.get(d) {
+                if let Kind::VarDecl {
+                    ty: None,
+                    init: Some(i),
+                    ..
+                } = &self.g.nodes[decl_id].kind
+                {
+                    let init = *i;
+                    if matches!(self.g.kind(init), Kind::Call { .. } | Kind::Member { .. }) {
+                        if let Some(t) = self.expr_type_name(init) {
+                            return t.starts_with('?');
+                        }
+                        if matches!(self.g.kind(init), Kind::Member { .. }) {
+                            return self.is_nullable_expr(init);
+                        }
+                    }
+                }
+            }
+        }
         // Check Member access: base.field → look up field type in class
         if let Kind::Member { base, name, .. } = self.g.kind(id) {
             // First check field_type_by_name (constructor params across all classes)
@@ -466,6 +490,29 @@ impl Engine {
                 for cp in ctor_params {
                     if cp.name == name && cp.kind != crate::node::CtorParamKind::Plain {
                         return Some(cp.ty.clone());
+                    }
+                }
+            }
+        }
+        // Fallback: member `var`/`let` field declarations (not ctor params). Covers fields
+        // declared in a class body — incl. those inherited from a base class (e.g. TreeBuilder's
+        // `var tokeniser: ?Tokeniser` used bare in HtmlTreeBuilder). Needed so is_nullable_expr
+        // resolves a bare `this.field` NameRef receiver for under-unwrap. Prefer an explicitly
+        // typed decl so an untyped shadow doesn't mask a typed one.
+        for (_, &cid) in &self.class_index {
+            if let Kind::Class { members, .. } = &self.g.nodes[cid].kind {
+                for m in members {
+                    if let Kind::VarDecl {
+                        name_node,
+                        ty: Some(t),
+                        ..
+                    } = self.g.kind(*m)
+                    {
+                        if let Kind::Name { original } = self.g.kind(*name_node) {
+                            if crate::parser::safe_name(original) == name {
+                                return Some(t.clone());
+                            }
+                        }
                     }
                 }
             }

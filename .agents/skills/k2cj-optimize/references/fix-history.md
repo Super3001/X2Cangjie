@@ -589,3 +589,33 @@
   - **2a（外溢）**: 966 → **963（-3）**，无回归。2a 残 5 处 `getOrThrow' is not a member of enum 'DayOfWeek'` 是**另一子模式**（over-unwrap on 非 Option 枚举值，非 null-check-rebound 场景），本修复正确未触及，独立候选。
 - **回归**: 单文件 251/251→252/252（含新 260）全绿三阶段（译/编/运行）。
 - **残留（下批候选，基于 R10 新分布决策）**: ② under-unwrap 79（最大剩余 Option 簇，需动 `x?.foo()`/可空字段成员调用的解包插入或 Option receiver 判定）；③ ==/!= 可空归一 49（两侧 Option 对齐或生成解包比较）；2a DayOfWeek 枚举 over-unwrap 5（非 null-check 的 getOrThrow-on-enum，独立机制）。
+
+### 2026-07-10 — RENDER+HEURISTICS — auto R11 Option 家族②：under-unwrap（可空 receiver 成员调用解包）
+
+- **战役**: auto R11，Option/nullable 第二批 under-unwrap。基线 output/target_1g_r10 = 1234。症状 `'foo' is not a member of enum 'Option<X>'`×79（Element×21/Node×12/String×8/Tokeniser×7/Attributes×7…）——可空 receiver 上直接调成员未解包。
+- **分桶诊断**（79 例按 receiver 形态回溯 .kt）:
+  - **A 循环游走局部**（~11）: `var parent = parent()` + `while(parent!=null){ parent=parent.parent() }`——局部由方法返回 `?T` 初始化, 循环内重赋值。`is_null_check_rebound` 因 block_assigns 返 false（正确，无 rebind），但 receiver 判不出可空。
+  - **B `&&` 短路守卫**（~10）: `(x.isSome()) && x.foo()`——源 `x!=null && x.foo()`，第二 operand 需解包（短路保证安全）。
+  - **C 可空字段/继承字段 receiver**（~15）: `tokeniser.transition()`（tokeniser 是**基类 TreeBuilder 的成员 var** `?Tokeniser`）、`_stack.size`。
+  - **D 非 NameRef receiver**（cast/index/双 Option/assign-target，~15）: `(x as Element).foo()`、`keys[i].toAsciiLower()`、`??Element`、`clone.field=...`。
+- **根因（两处覆盖缺口）**:
+  1. **方法调用路径不解包**: 成员**字段读** `x.field` 走 render.rs 成员访问路径（748 行**已有** getOrThrow 自动解包 + `is_null_check_rebound` 门控，R10 就在其旁补的），但**方法调用** `x.foo()` 走 render_calls.rs::render_member_call → `self.atom(base)`，**从不解包**——两条 receiver 渲染路径只有字段读那条接了解包。
+  2. **局部可空性推断缺口**: `is_nullable_expr` → `expr_type_name` 的 VarDecl-init 分支只处理 `Call{NameRef}`（构造器）/NameRef/CollLit 初值，不递归 `Call{Member}`（方法返回 `?T`）/`Member`（字段读）初值 → 循环游走局部/字段派生局部判不出可空。
+  3. **`field_type_by_name` 只查构造参数**: 不含类体 member `var`/`let` 字段 → 继承自基类的 `tokeniser`/`_stack` 等裸 `this.field` receiver 判不出可空。
+- **修复（三小步，逐步回归）**:
+  - **Step1**（render_calls.rs，L1）: 新增 `render_call_recv(base, safe)`——`!safe && is_nullable_expr(base) && !is_null_check_rebound(base)` 时插 `.getOrThrow()`，与 748 行语义一致；render_member_call 用它替换 `atom(base)`，签名加 `safe`（`?.` 安全调用不解包，保 None 短路；rebind 不解包，防 R10 over-unwrap 回归）。单独测：79→78（-1，仅补了基础设施，多数 receiver 判不出可空）。
+  - **Step2**（heuristics.rs is_nullable_expr，narrow）: 局部无声明类型时, 由 `Call`/`Member` 初值递归推断可空（`expr_type_name(Call)` 已能取方法返回类型；`is_nullable_expr(Member)` 已能查字段类型）；仅对 Call/Member 初值递归（不含 NameRef，避免 `var x=x` 自引用环）。**不改** expr_type_name 全局（避免污染其它 heuristic）。79→51（-28）。
+  - **Step3**（heuristics.rs field_type_by_name，扩展既有路径）: 构造参数无命中时, 回退扫类体 member `VarDecl`（带显式类型）——覆盖继承自基类的字段。79→40（-11）。
+- **层级**: L1（render 单点）+ L2（两个既有 helper 扩展，无新机制）
+- **测试**: 261_option_under_unwrap（循环游走 method+field 解包 / `&&` 短路解包 / if-let rebind 非回归 / `?.` 安全调用非回归；翻译→cjc→运行 exact-match 8 行 `0/none/empty/nil/3/one/c1/c1`）。
+- **测量**:
+  - **1g**: 1234 → **1203（-31）**。under-unwrap `not a member of enum 'Option'` **79→40（-39）**。级联（诚实新表面, 均 <阈值）: not-a-member-of-class 108→114（+6, 解包后 receiver 落到具体类, 暴露该类真实 member-not-found）、mismatched +1。**无簇上升>20**。
+  - **2a**（已标暂停, 仅记录）: 963 → **963（0）** 无外溢无回归（2a under-unwrap 本就仅 3）。
+- **回归**: 单文件 252/252→**253/253** 全绿三阶段（含新 261）。Step3 是最高风险改动（field_type_by_name 跨类按名返首个匹配, HashMap 序不定有歧义风险）——回归全绿判定安全, 保留。
+- **L3 残留桶清单（R12 候选，40 例，均需更深类型流或非 NameRef receiver 支持, 本批按约定跳过）**:
+  - **桶 D-cast**: `(x as Element).foo()` cast 表达式 receiver（node.cj elementIs/invalidateChildren×2、element.cj childElementsList、leaf_node value）——需 cast 结果可空性推断。
+  - **桶 D-index**: `arr[i].toAsciiLower()` 下标 receiver（attributes.cj toAsciiLower×4、tokeniser）——需下标元素类型可空推断。
+  - **桶 D-assign**: `clone.field = ...` 赋值目标成员（document outputSettings/attributes、element childNodes×2/attributes×2、tag_set tagName/options）——赋值目标路径不走解包。
+  - **桶 D-double**: `??Element` 双 Option（element.cj:920/923 el.tag/el.parent）。
+  - **桶 C-ambig**: `let a = obj.field` Member-init 局部, field_type_by_name 跨类同名歧义（html_tree_builder attributes isEmpty/deduplicate、token attributes.size×2）——需按 receiver 静态类精确定位字段（enclosing-class + 继承链解析）。
+  - **桶 misc**: tokeniser.cj name/hasAttributes/retrieveNormalName（lastStartTag/EndTag 局部）、tree_builder/html_tree_builder `_stack.remove/clear` 部分残留。

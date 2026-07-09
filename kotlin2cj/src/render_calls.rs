@@ -139,12 +139,12 @@ impl Engine {
                 }
             }
         }
-        if let Kind::Member { base, name, .. } = self.g.kind(callee) {
+        if let Kind::Member { base, name, safe } = self.g.kind(callee) {
             if let Some(a) = self.render_call_args_with_params(name, args) {
                 let c = self.atom(callee)?;
                 return Some(format!("{}({})", c, a.join(", ")));
             }
-            if let Some(result) = self.render_member_call(*base, name, args) {
+            if let Some(result) = self.render_member_call(*base, name, args, *safe) {
                 return Some(result);
             }
         }
@@ -161,8 +161,25 @@ impl Engine {
         Some(format!("{}({})", c, a.join(", ")))
     }
 
+    /// 渲染成员方法调用的接收者，可空且非 rebound 且非 `?.` 时插入 `.getOrThrow()`。
+    /// 与 render.rs 成员访问自动解包路径语义一致，覆盖方法调用路径（此前只走 atom 不解包）。
+    fn render_call_recv(&self, base: NodeId, safe: bool) -> Option<String> {
+        let raw = self.atom(base)?;
+        if !safe && self.is_nullable_expr(base) && !self.is_null_check_rebound(base) {
+            Some(format!("{}.getOrThrow()", raw))
+        } else {
+            Some(raw)
+        }
+    }
+
     /// 成员方法调用的特殊映射，返回 None 表示无特殊处理。
-    fn render_member_call(&self, base: NodeId, name: &str, args: &[NodeId]) -> Option<String> {
+    fn render_member_call(
+        &self,
+        base: NodeId,
+        name: &str,
+        args: &[NodeId],
+        safe: bool,
+    ) -> Option<String> {
         if name == "values" && args.is_empty() {
             if let Kind::NameRef { original, .. } = self.g.kind(base) {
                 if let Some(entries) = self.enum_entries(original) {
@@ -174,7 +191,12 @@ impl Engine {
                 }
             }
         }
-        let b = self.atom(base)?;
+        // Auto-unwrap a nullable method-call receiver (under-unwrap fix, mirrors
+        // render.rs member-access path): `x.foo()` where `x: ?T` and `x` is not a
+        // rebound smart-cast local → `x.getOrThrow().foo()`. Skip for `?.` safe calls
+        // (None short-circuit semantics) and for null-check-rebound locals (already
+        // non-Option in the guarded block — avoids R10-style over-unwrap regression).
+        let b = self.render_call_recv(base, safe)?;
         match name {
             // ---- Char 方法 ----
             "isDigit" | "isLetter" | "isWhitespace" | "isUpperCase" | "isLowerCase"

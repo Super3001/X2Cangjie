@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R10: **1234** | Option 战役第一批 over-unwrap 15→0(render ForceUnwrap 补 is_null_check_rebound 门控); 后续批: under-unwrap×79 / ==!=可空归一×49; 余候选: enum-body截断A(~90)/notEmpty E(49) | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R11: **1203** | Option 战役: over-unwrap 15→0 + under-unwrap 79→40(方法调用receiver解包/初值递归可空/继承字段回退); R12 = ==!=可空归一×49; L3 残留桶: cast/index/assign-target/双Option/跨类字段歧义(清单在 R11 战报); 余候选: enum-body截断A/notEmpty E/==Equatable闭环(审计强制) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,13 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g Option 战役第二批 (2026-07-10) — under-unwrap 79→40（auto R11/15）
+
+- **分桶诊断（审计战术提示兑现）**: A 循环游走局部×11 / B `&&` 短路守卫×10 / C 可空继承字段×15 / D 非 NameRef receiver×15。三处覆盖缺口: ① 方法调用 receiver 从不解包（只有字段读走 748 路径）② is_nullable_expr 不递归 Call/Member 初值 ③ field_type_by_name 漏类体 member var。
+- **修复（三小步逐步回归）**: render_calls `render_call_recv`（748 同款门控）/ heuristics 初值递归推断 / 继承字段回退。79→40; 1g 1234→**1203**（-31, 级联 +6 not-a-member 为解包后真实揭示）。2a 963 无变化无回归。
+- **L3 残留桶（R12+ 候选, 详见 fix-history）**: D-cast/D-index/D-assign/D-double/C-ambig（跨类字段歧义需 receiver 静态类+继承链）。
+- **测试**: 261_option_under_unwrap。回归 253/253 + 36/36 全绿。
 
 ### 1g Option 战役第一批 (2026-07-10) — over-unwrap 子模式清零（auto R10/15）
 
