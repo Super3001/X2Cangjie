@@ -254,6 +254,55 @@ impl Engine {
         false
     }
 
+    /// override 剥离判定：若能证明所有父类型都不可能声明成员 `fn_name`
+    /// （无父类、且接口全部是已知成员集的 stub/内建接口），返回 true。
+    /// 此时保留 `override` 会让 cjc 报 "'override' function does not have
+    /// an overridden function in its supertype"（marker stub 接口场景），
+    /// 渲染时应剥掉。任一接口来源未知（用户接口等）即保守返回 false。
+    pub(crate) fn override_provably_unmatched(&self, func_id: NodeId, fn_name: &str) -> bool {
+        let mut class_id = None;
+        if let Some(parent_id) = self.g.nodes[func_id].parent {
+            // 先查直接父节点：嵌套类（如 Element 内的 NodeList）成员的
+            // 祖父是外层类，先查祖父会误判所属类。
+            if matches!(self.g.kind(parent_id), Kind::Class { .. }) {
+                class_id = Some(parent_id);
+            } else if let Some(gp) = self.g.nodes[parent_id].parent {
+                // parent is a Block; check the Block's parent for Class
+                if matches!(self.g.kind(gp), Kind::Class { .. }) {
+                    class_id = Some(gp);
+                }
+            }
+        }
+        let Some(cid) = class_id else {
+            return false;
+        };
+        if let Kind::Class {
+            superclass,
+            interfaces,
+            ..
+        } = self.g.kind(cid)
+        {
+            if superclass.is_some() || interfaces.is_empty() {
+                return false;
+            }
+            interfaces.iter().all(|itf| {
+                let base = itf.split('<').next().unwrap_or(itf).trim();
+                match base {
+                    // marker stub 接口：无任何成员
+                    "MutableList" | "MutableMap" | "Entry" | "MutableEntry"
+                    | "MutableCollection" => true,
+                    // 成员集已知的接口：命中成员名则不可剥
+                    "AutoCloseable" => fn_name != "close",
+                    "ToString" => fn_name != "toString",
+                    // 未知接口（用户定义等）：保守保留 override
+                    _ => false,
+                }
+            })
+        } else {
+            false
+        }
+    }
+
     /// 查找名为 `name` 的枚举声明，返回其所有枚举项名。
     pub(crate) fn enum_entries(&self, name: &str) -> Option<Vec<String>> {
         if let Some(&eid) = self.enum_index.get(name) {

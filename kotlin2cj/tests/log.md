@@ -1,9 +1,9 @@
 # kotlin2cj 测试日志
 
-- 用例总数: 233
-- 翻译成功: 233/233
-- 仓颉编译通过: 232/233
-- 运行输出匹配: 232/233
+- 用例总数: 235
+- 翻译成功: 235/235
+- 仓颉编译通过: 235/235
+- 运行输出匹配: 235/235
 
 | 用例 | 翻译 | 编译 | 运行 | 备注 |
 |------|------|------|------|------|
@@ -155,15 +155,17 @@
 | 239_generic_typealias | ✅ | ✅ | ✅ |  |
 | 23_primes | ✅ | ✅ | ✅ |  |
 | 240_receiver_function_type | ✅ | ✅ | ✅ |  |
+| 241_autocloseable | ✅ | ✅ | ✅ |  |
 | 241_ctor_middle_default_param | ✅ | ✅ | ✅ |  |
+| 242_mutable_list_marker | ✅ | ✅ | ✅ |  |
 | 242_star_projection | ✅ | ✅ | ✅ |  |
+| 243_map_entry_supertype | ✅ | ✅ | ✅ |  |
 | 243_throw_elvis | ✅ | ✅ | ✅ |  |
 | 244_extension_property | ✅ | ✅ | ✅ |  |
 | 245_fully_qualified_type | ✅ | ✅ | ✅ |  |
 | 246_top_level_var_func_collision | ✅ | ✅ | ✅ |  |
 | 247_fully_qualified_refined | ✅ | ✅ | ✅ |  |
 | 248_typealias_render | ✅ | ✅ | ✅ |  |
-| 249_tochararray_infer | ✅ | ❌ | ❌ | error[0m: 'toCharArray' is not a member of struct 'String' |
 | 24_fizzbuzz | ✅ | ✅ | ✅ |  |
 | 25_fib_list | ✅ | ✅ | ✅ |  |
 | 26_bank | ✅ | ✅ | ✅ |  |

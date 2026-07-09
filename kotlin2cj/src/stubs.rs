@@ -276,6 +276,49 @@ const APPENDABLE_STUB: StubDef = StubDef {
 extend StringBuilder <: Appendable {}"#,
 };
 
+/// java/Kotlin `AutoCloseable` 接口 stub。
+const AUTO_CLOSEABLE_STUB: StubDef = StubDef {
+    provides: &["AutoCloseable"],
+    markers: &["AutoCloseable"],
+    imports: &[],
+    code: r#"public interface AutoCloseable {
+    func close(): Unit
+}"#,
+};
+
+/// Kotlin `MutableList` marker 接口 stub。父类型位的泛型实参在 parse 时被
+/// 丢弃（`class NodeList : MutableList<Node>` → `<: MutableList`），故做成
+/// 非泛型 marker 保证类声明可编译；成员由实现类自身提供，配合 render 侧
+/// 的 override 剥离（override_provably_unmatched）。值位 `MutableList<T>`
+/// 走 map_type → ArrayList<T>，不经过本 stub。
+const MUTABLE_LIST_STUB: StubDef = StubDef {
+    provides: &["MutableList"],
+    markers: &["MutableList"],
+    imports: &[],
+    code: "public interface MutableList {}",
+};
+
+/// Kotlin `MutableMap` marker + `MutableCollection` 最小 stub（同上）。
+const MUTABLE_MAP_STUB: StubDef = StubDef {
+    provides: &["MutableMap", "MutableCollection"],
+    markers: &["MutableMap", "MutableCollection"],
+    imports: &[],
+    code: r#"public interface MutableMap {}
+
+public interface MutableCollection<E> {}"#,
+};
+
+/// Kotlin `Map.Entry` / `MutableMap.MutableEntry` 父类型位 marker 接口
+/// （限定名折叠见 parser 父类型解析与 map_type；值位映射为元组 (K, V)）。
+const ENTRY_STUB: StubDef = StubDef {
+    provides: &["Entry", "MutableEntry"],
+    markers: &["Entry", "MutableEntry"],
+    imports: &[],
+    code: r#"public interface Entry {}
+
+public interface MutableEntry <: Entry {}"#,
+};
+
 pub static STUBS: &[StubDef] = &[
     REGEX_STUB,
     KCLASS_STUB,
@@ -286,6 +329,10 @@ pub static STUBS: &[StubDef] = &[
     INT_ARRAY_STUB,
     CHARSET_STUB,
     APPENDABLE_STUB,
+    AUTO_CLOSEABLE_STUB,
+    MUTABLE_LIST_STUB,
+    MUTABLE_MAP_STUB,
+    ENTRY_STUB,
 ];
 
 /// 词边界匹配：`word` 在 `body` 中出现且前后均非标识符字符。

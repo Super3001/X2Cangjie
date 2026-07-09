@@ -1179,13 +1179,19 @@ impl Engine {
                 );
             }
         }
-        // Determine visibility/open modifiers based on parent class context
+        // Determine visibility/open modifiers based on parent class context.
+        // override 在全部父类型中都无可匹配成员时剥离（marker stub 接口场景），
+        // 避免 cjc "does not have an overridden function in its supertype"。
+        let stripped = is_override && self.override_provably_unmatched(id, name);
+        let is_override = is_override && !stripped;
         let vis = if is_override && in_open_class {
             "public open override "
         } else if is_override {
             "public override "
         } else if in_open_class {
             "public open "
+        } else if stripped {
+            "public "
         } else {
             ""
         };

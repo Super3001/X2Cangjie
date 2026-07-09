@@ -190,9 +190,12 @@ impl Parser {
                     // 合并翻译中某声明解析失败时，跳过至下一 package 边界继续
                     // 确保退出所有嵌套上下文（跳过直至遇到 package 声明或 EOF）
                     // 确保退出所有嵌套上下文（跳过直至遇到 package 声明或 EOF）
+                    // depth 从错误点起算：错误点可能在嵌套花括号内，退出外层
+                    // 花括号时 depth 会变负，故边界判定用 <= 0（== 0 会一路
+                    // 跳到 EOF，丢掉后续所有文件的声明）。
                     let mut depth = 0i32;
                     while !self.at_eof() {
-                        if matches!(self.peek(), Tok::Ident(x) if x == "package") && depth == 0 {
+                        if matches!(self.peek(), Tok::Ident(x) if x == "package") && depth <= 0 {
                             break;
                         }
                         if self.is_sym("{") { depth += 1; }
@@ -1114,6 +1117,15 @@ impl Parser {
                     let part = self.expect_ident()?;
                     sup_name = format!("{}.{}", sup_name, part);
                 }
+                // stdlib 嵌套接口限定名折叠：仓颉无嵌套类型，父类型位的
+                // `Map.Entry` / `MutableMap.MutableEntry` 折叠为顶层 marker
+                // 接口名（由 stubs.rs 注入）。用户嵌套类的限定名折叠走
+                // engine::apply_nested_lifting，不在此处理。
+                sup_name = match sup_name.as_str() {
+                    "Map.Entry" => "Entry".to_string(),
+                    "MutableMap.MutableEntry" => "MutableEntry".to_string(),
+                    _ => sup_name,
+                };
                 // 跳过泛型实参（如 `Map.Entry<String, String?>`）
                 if self.eat_sym("<") {
                     let mut depth = 1i32;
@@ -3031,6 +3043,11 @@ pub fn map_type(raw: &str) -> String {
         if base == "Pair" || base == "Triple" {
             return format!("({})", args.join(", "));
         }
+        // Kotlin `Map.Entry<K, V>` / `MutableMap.MutableEntry<K, V>` 值位 →
+        // 元组 `(K, V)`（仓颉 HashMap 迭代产出的元素类型即 (K, V)）。
+        if base == "Map.Entry" || base == "MutableMap.MutableEntry" {
+            return format!("({})", args.join(", "));
+        }
         let mapped_base = match base {
             "List" | "MutableList" | "ArrayList" | "Collection" | "Iterable" => "ArrayList",
             "Map" | "MutableMap" | "HashMap" | "LinkedHashMap" => "HashMap",
@@ -3055,6 +3072,9 @@ pub fn map_type(raw: &str) -> String {
         "Any" => "Object".to_string(),
         "Throwable" => "Exception".to_string(),
         "NumberFormatException" => "IllegalArgumentException".to_string(),
+        // 裸限定名（泛型实参已在上游丢弃）→ 顶层 marker 接口名（stubs.rs 注入）
+        "Map.Entry" => "Entry".to_string(),
+        "MutableMap.MutableEntry" => "MutableEntry".to_string(),
         other => other.to_string(),
     }
 }
