@@ -17,3 +17,6 @@ kotlin2cj/output/
 # opencode 自动安装的 skills (区别于项目根 .agents/ 工作流知识)
 kotlin2cj/.agents/
 kotlin2cj/skills-lock.json
+
+# .claude/skills 是指向 .agents/skills 的 junction（Claude Code skill 发现用），防重复跟踪
+.claude/skills
