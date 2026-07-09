@@ -52,7 +52,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 | 目标 | 规模 | 状态 | 编译错误 | x2cj-eval | 备注 |
 |------|:---:|:--:|:-------:|:---------:|------|
-| kotlinx-datetime (2a) | 43 (剪 serializers 后) | ⏳ | R6: **963** | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R6 父接口位泛型实参保留(62→21, 级联曝 missing-abstract×29) + equals/hashCode 剥离(103→21, 1g 跨目标 14→0); R7 候选: undeclared id×189(Directive×35, 疑成员import重限定=1g簇D同根)/undeclared type×155/extend-shadow×60/mismatched×86 |
+| kotlinx-datetime (2a) | 43 (剪 serializers 后) | ⏸ | R6: **963**（暂停, 第10轮审计裁决: 连续两轮净零） | - | 本地工程 C:/Codes/kotlin/kotlinx-datetime; R6 父接口位泛型实参保留(62→21, 级联曝 missing-abstract×29) + equals/hashCode 剥离(103→21, 1g 跨目标 14→0); R7 候选: undeclared id×189(Directive×35, 疑成员import重限定=1g簇D同根)/undeclared type×155/extend-shadow×60/mismatched×86 |
 | koin | ~120 | 🔒 | - | - | Phase 1 测过 core(25)，升级全量 |
 | exposed | ~150 | 🔒 | - | - | 全新项目 |
 
@@ -80,6 +80,12 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 战略校准记录
+
+### 2026-07-10 — auto 第 10 轮定期校准 + 防刷冷启动审计
+
+- **三条强制修正核验**: (a) Option 战役已开打且程序合规（预注册转向条件成立）✓ (b) 1e 运行时验证质量超预期（主动记录 Int 宽度偏差）✓ (c) 轮标基本统一（fix-history R10 条漏 auto 标, 小瑕疵）✓。
+- **质量趋势**: 五轮全为真实语言特性泛化, 无特例规则; "账面变差但诚实"三处正面样本（R9 证伪记录/R10 净<毛/R6 主动曝 missing-abstract）。**两处软肋盯防**: ① 2a 1237→1070 中 ~120 来自剪枝而非译器能力, 成本曲线叙事打折 ② equals/hashCode 剥离 -96 是"消错不消语义"——**== 语义缺口必须在 Option 战役内闭环, 否则追溯重计为养指标**。
+- **裁决与约束**: ① auto R11 必须打 Option 第二批 under-unwrap×79, 不接受转向（战术提示: render.rs:748 成员访问自动解包路径已存在, 先诊断 79 处为何没被接住——is_nullable_expr 覆盖缺口或非 NameRef receiver——可能远比新造机制便宜）② ==/Equatable 闭环排入战役 ③ **2a 正式标 ⏸ 暂停**（连续两轮净零, 不许挂 ⏳ 吃外溢当进展）; 恢复候选: Directive 嵌套类型引用×35 + DayOfWeek 枚举 over-unwrap×5; 2a 暂停期间剪枝轮顶上排期（stub 负债 6 项 🔒 已两次出现在校准记录）。
 
 ### 2026-07-10 — auto 第 5 轮定期校准 + 防刷软柿子冷启动审计
 
