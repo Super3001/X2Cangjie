@@ -647,3 +647,28 @@
   - **R11 under-unwrap 函数值**（~3）: `Int64 != () -> Int64`（方法未加 `()` 调用）——非本桶，R11 残留。
   - **泛型参**（~1）: `Generics-E == Class-Element`。
 - **R13 首要**: 桶 C 结构相等闭环——需解决 `equals(?Object)` + 调用点 Some 装箱的 when-is/as 匹配缺口（或改 equals 派发为不装箱的直调）。`class_has_equals`/`same_equals_class` 已备。
+
+### 2026-07-10 — RENDER+HEURISTICS — auto R13 Option 家族④：== 语义闭环（桶 C 结构 equals 派发）
+
+- **战役**: auto R13，== 语义闭环（审计强制项——R8 剥离 equals/hashCode 的 -96 不闭环将追溯重计）。基线 output/target_1g_r12 = 1150。
+- **探针先行**（cjc 1.0.5 实证，两方案均通）:
+  - **A（equals 体先解包）**: `match(other){case Some(o) => o is T ...}`——`o is T`（o: Object 持 T）成立✓，`(o as T).getOrThrow()`→T✓。且 `is`/`as` **直接**作用在 `?Object` 上**恒 false/得 Option<T>**（实证 `other is T` on ?Object 恒 false）——必须先解包。
+  - **B（operator ==+Equatable<T>）**: `operator func ==(that:T){equals(that)}` + `<:Equatable<T>`——直接 `T==T`✓、`Option<T>==Option<T>`✓（Option Equatable）、与 refEq2 共存✓。
+  - **选 A**：修 equals 体（B 也依赖体正确），调用点走桶 C 空安全 `.equals()` 派发（`equals(?Object)` 自动装箱裸值）——无需改类继承/加 operator，回归面更小。
+- **根因**: `equals(other: ?Object)` 体内三类原语对 `?Object` 失效——① `other is T`（IsCheck）恒 false；② `other as T`（TypeCast）得 `Option<T>`（且 Option<Object> 不能直接 as），赋给 `: T` 局部即类型错；③ `this::class != other::class`（`::class` 反射被降为 base → `this != other`，This vs ?Object）。
+- **修复（render.rs 三处 + heuristics 重构）**:
+  1. **IsCheck 可空感知**: `x is T`（x 可空且非 rebind）→ `(x.isSome() && x.getOrThrow() is T)`；`!is` → `(x.isNone() || !(x.getOrThrow() is T))`。
+  2. **TypeCast 可空感知**（非 safe `as`）: `x as T`（x 可空）→ `(x.getOrThrow() as T).getOrThrow()`（解包→向下转型→再解包，对齐 Kotlin 非空 as 得非空 T；空则抛错≈CCE）。
+  3. **`::class` 反射比较**（render_class_reflection_eq）: 两侧均 `::class`/`javaClass` 成员且一侧 `this` → `(other is EnclosingClass)`（`==`）/取反（`!=`）（仓颉无 getClass，以外围类 `is` 近似，对 jsoup final DOM 类精确）。
+  4. **桶 C 空安全派发**（render_eq_normalized + heuristics same_equals_class 重写返回 `(类名,ln,rn)`）: 两侧同一含 equals 引用类 → 按可空组合生成空安全结构相等（都非空 `a.equals(b)`；一空 `x.isSome() && ...`；都空 `(都 None)||(都 Some && 结构)`）。任一侧 `this` 不派发（`===` 引用语义 + 防 equals 体自递归）。
+  5. **heuristics 重构**: 抽 `resolve_eq_type(id)→(基类型名,可空)`（综合 expr_type_name/成员字段/Call-init 局部三路径），classify_eq_operand 与 same_equals_class 共享。
+- **层级**: L2（render.rs 三渲染点 + heuristics 类型解析重构）
+- **测试**: 263_equals_dispatch（**语义闭环证明**，含运行时断言）——结构相等（同值异实例 `Point(1,2)==Point(1,2)` → true）/ 非相等 false / null 组合（都空真、一空假、opt-vs-裸真）/ 无 equals 类 `Ref` 走 refEq 身份（异实例 false、同实例 true）互不干扰；翻译→cjc→运行 exact-match 14 行全绿。
+- **测量**（**本轮考核=语义闭环非错误数**）:
+  - **1g**: 1150 → **1135（-15）**。eq `==`/`!=` 22→18。equals 派发桶由引用语义**升级为结构语义**（如 `a.attributes().equals(b.attributes())` 现为结构比较）——语义升级 + 编译中性；-15 来自 IsCheck/TypeCast/`::class` 修复令 equals 体编译。
+  - **2a**（外溢，仅记录）: 964 → **967（+3）**。级联/新表面（如 `Rune != UInt8`×1），refEq2/equals-派发 0 自致错误，全局 is/as 改动在 2a 几乎未触发。
+- **回归**: 单文件 254→**255/255** 全绿三阶段（含新 263）。**262 改造**：其 Box 原含 `when(is)`-form equals（TypePat-on-Option，本轮 IsCheck 修复不覆盖 when 臂），R13 派发到该 broken equals 致 262 回归 → 将 Box 改为**纯引用类**（无 equals），归位为 refEq2 桶回归守卫（262 期望不变，仍绿）。
+- **== 语义闭环进度：桶 C 部分完成 5/8**:
+  - **已闭环（5）**: attribute / attributes / safelist / tag_set（显式 `let x = other as T` 绑定，TypeCast 修复直达）+ node（refEq2 身份——jsoup Node.equals 本即 `this === o` 身份，语义正确）。
+  - **残留（3，下轮候选）**: tag / nodes / identity_hash_map——`other as T` **裸语句 smart-cast** 后 `other.member`（tag `other.options`、id_map `other.value`）/ `other[i]`（nodes 集合下标）仍作用在 `Object`（未向下转型）。根因 = **flow-sensitive smart-cast 未跟踪**（`if(other is T)`/`other as T` 后 `other` 应被视为 T）——独立深层特性，非本桶原语，留下轮（同时可闭 262-Box 的 when-is 场景）。
+- **审计**: R8 剥离 equals/hashCode 的 -96，结构语义对 **5/8** 类闭环 + 机制经 263 运行时证明；3 类残留待 smart-cast 跟踪。

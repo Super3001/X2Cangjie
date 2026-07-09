@@ -459,6 +459,15 @@ impl Engine {
             Kind::Block { .. } => self.render_block(id),
             Kind::IsCheck { expr, ty, negate } => {
                 let e = self.atom(expr)?;
+                // 可空操作数 `x is T`（x: Option<...>）：仓颉 `is` 不穿透 Option（Some(v) is T
+                // 恒 false）。Kotlin `x is T`（x: Any?）语义 = 非空且内值是 T → 先解包再判定。
+                if self.is_nullable_expr(expr) && !self.is_null_check_rebound(expr) {
+                    return Some(if negate {
+                        format!("({}.isNone() || !({}.getOrThrow() is {}))", e, e, ty)
+                    } else {
+                        format!("({}.isSome() && ({}.getOrThrow() is {}))", e, e, ty)
+                    });
+                }
                 if negate {
                     Some(format!("!({} is {})", e, ty))
                 } else {
@@ -562,6 +571,11 @@ impl Engine {
                         "(if ({} is {}) {{ {} as {} }} else {{ None }})",
                         e, ty, e, ty
                     ))
+                } else if self.is_nullable_expr(expr) && !self.is_null_check_rebound(expr) {
+                    // 可空操作数 `x as T`（x: Option<...>，非空断言语义）：仓颉 `x as T` 得
+                    // Option<T>，且 Option<Object> 无法直接 `as`。先解包再向下转型再解包 → T
+                    // （对齐 Kotlin 非空 `as` 得非空 T；空则 getOrThrow 抛错，与 Kotlin CCE 一致）。
+                    Some(format!("({}.getOrThrow() as {}).getOrThrow()", e, ty))
                 } else {
                     // `as` → direct cast
                     Some(format!("({} as {})", e, ty))
@@ -630,6 +644,12 @@ impl Engine {
             });
         }
         if op == "==" || op == "!=" {
+            // 运行时类型比较 `this::class == other::class`（equals 样板）：两侧均为 `::class`
+            // 反射成员（渲染时被降为 base）。仓颉无 `getClass()`，以外围类的 `is` 判定近似
+            // （对 jsoup 里 final DOM 类精确）：`a::class == b::class` → `other is EnclosingClass`。
+            if let Some(res) = self.render_class_reflection_eq(op, lhs, rhs) {
+                return Some(res);
+            }
             let lhs_null = matches!(self.g.kind(lhs), Kind::Raw(s) if s == "None");
             let rhs_null = matches!(self.g.kind(rhs), Kind::Raw(s) if s == "None");
             if lhs_null ^ rhs_null {
@@ -690,14 +710,66 @@ impl Engine {
         Some(format!("{} {} {}", la, op, ra))
     }
 
+    /// `x::class == y::class` / `!=`（Kotlin 运行时类型相等，equals 样板惯用）。
+    /// 两侧须均为 `::class` 反射成员；一侧为 `this` 时以外围类的 `is` 判定近似另一侧。
+    fn render_class_reflection_eq(&self, op: &str, lhs: NodeId, rhs: NodeId) -> Option<String> {
+        let is_class_ref = |id: NodeId| -> Option<NodeId> {
+            if let Kind::Member { base, name, .. } = self.g.kind(id) {
+                if name == "::class" || name == "javaClass" || name == "::javaClass" {
+                    return Some(*base);
+                }
+            }
+            None
+        };
+        let lb = is_class_ref(lhs)?;
+        let rb = is_class_ref(rhs)?;
+        let is_this = |id: NodeId| matches!(self.g.kind(id), Kind::NameRef { original, .. } if original == "this" || original == "`this`");
+        // 取「非 this」一侧作被判定对象，this 一侧提供外围类名。
+        let (subj, this_node) = if is_this(lb) {
+            (rb, lb)
+        } else if is_this(rb) {
+            (lb, rb)
+        } else {
+            return None;
+        };
+        let cls = self.current_class(this_node)?;
+        let subj_atom = self.atom(subj)?;
+        // subj 通常是 equals 的 `other: ?Object`（可空）→ 用可空感知 is 判定。
+        let nullable = self.is_nullable_expr(subj) && !self.is_null_check_rebound(subj);
+        let same_type = if nullable {
+            format!("({}.isSome() && ({}.getOrThrow() is {}))", subj_atom, subj_atom, cls)
+        } else {
+            format!("({} is {})", subj_atom, cls)
+        };
+        Some(if op == "==" {
+            same_type
+        } else {
+            format!("!{}", same_type)
+        })
+    }
+
     /// 可空/引用相等归一（op 为 `==` 或 `!=`，两侧均非 `None` 字面量）。
     /// 返回 `None` 表示判不出类别、保持原样（保守，宁残留勿误改语义）。
     fn render_eq_normalized(&self, op: &str, lhs: NodeId, rhs: NodeId) -> Option<String> {
         use crate::heuristics::EqCat;
-        // 桶 C（结构相等 `a.equals(b)` 派发）已延后至 R13：仓颉 `equals(other: ?Object)`
-        // 体内 `when(other){is T}` / `other as T` 无法匹配调用点自动装箱的 `Some(arg)`
-        // （arg 被包成 Option<Object> 而非 T），派发会静默返回错误结果。故本轮同类含
-        // equals 的比较一律走桶 A 引用相等（能编译、引用语义），结构相等闭环记入 R13。
+        // 桶 C（结构相等派发，R13 闭环）：两侧同一含 equals 方法的引用类 → 空安全 `a.equals(b)`。
+        // R13 前置修复（IsCheck/TypeCast 可空感知 + `::class` 反射比较）已让 equals 体在解包
+        // 后正确工作；此处按两侧可空性生成空安全派发（equals 参数 ?Object 会自动装箱裸值）。
+        if let Some((_cls, ln, rn)) = self.same_equals_class(lhs, rhs) {
+            let la = self.atom(lhs)?;
+            let ra = self.atom(rhs)?;
+            // 各可空组合下的「结构相等」表达式（Kotlin `==` 语义：都空=真，一空=假，都非空=结构）。
+            let eq = match (ln, rn) {
+                (false, false) => format!("{}.equals({})", la, ra),
+                (true, false) => format!("({}.isSome() && {}.getOrThrow().equals({}))", la, la, ra),
+                (false, true) => format!("({}.isSome() && {}.equals({}.getOrThrow()))", ra, la, ra),
+                (true, true) => format!(
+                    "(({}.isNone() && {}.isNone()) || ({}.isSome() && {}.isSome() && {}.getOrThrow().equals({}.getOrThrow())))",
+                    la, ra, la, ra, la, ra
+                ),
+            };
+            return Some(if op == "==" { eq } else { format!("!({})", eq) });
+        }
         let (lc, _ln) = self.classify_eq_operand(lhs);
         let (rc, _rn) = self.classify_eq_operand(rhs);
         // 桶 A：两侧均为引用类别 → 空安全引用相等 `__k2cjRefEq2(a, b)`。

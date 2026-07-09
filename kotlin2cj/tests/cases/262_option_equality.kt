@@ -27,16 +27,9 @@ class Node(val id: Int) {
 }
 
 // Structural equality class (bucket C): equals() defines value equality.
-class Box(val v: Int) {
-    fun eqBox(o: Box): Boolean = v == o.v
-    override fun equals(other: Any?): Boolean {
-        return when (other) {
-            is Box -> eqBox(other)
-            else -> false
-        }
-    }
-    override fun hashCode(): Int = v
-}
+// Plain reference class (no equals) — must stay in the refEq2 identity bucket.
+// (Structural equals-dispatch is covered by 263_equals_dispatch.)
+class Box(val v: Int)
 
 fun main() {
     // ---- Bucket A: reference identity ----
@@ -68,11 +61,11 @@ fun main() {
     println(none == name)           // false
     println(name != maybe)          // false
 
-    // ---- Bucket C: class with equals() -> reference identity (R13 defers structural) ----
+    // ---- Bucket C: plain reference class -> refEq2 identity (structural in 263) ----
     val p = Box(5)
     val q = Box(5)
     val p2 = p
-    println(p == q)                 // false (distinct refs; structural closure -> R13)
+    println(p == q)                 // false (distinct refs)
     println(p == p2)                // true  (same ref)
     println(p != q)                 // true
 

@@ -263,8 +263,6 @@ impl Engine {
     }
 
     /// 类 `name`（或其祖先）是否定义了 `equals` 方法（用于 == 结构相等派发）。
-    /// 保留供 R13 结构相等闭环使用（本轮桶 C 延后，见 render_eq_normalized）。
-    #[allow(dead_code)]
     pub(crate) fn class_has_equals(&self, name: &str) -> bool {
         let base = name.split('<').next().unwrap_or(name).trim();
         if let Some(&cid) = self.class_index.get(base) {
@@ -315,21 +313,25 @@ impl Engine {
                 return (EqCat::Ref, false);
             }
         }
-        let nullable = self.is_nullable_expr(id);
-        if let Some(ty) = self.expr_type_name(id) {
-            let base = ty.trim_start_matches('?');
-            return (self.eq_type_category(base), nullable);
+        if let Some((base, nullable)) = self.resolve_eq_type(id) {
+            return (self.eq_type_category(&base), nullable);
         }
-        // Member 字段访问 `base.field`：expr_type_name 不解析成员字段类型，
-        // 这里按 base 的类查字段声明类型（覆盖 `a.parent`（`?Node`）等可空引用字段）。
+        (EqCat::Unknown, self.is_nullable_expr(id))
+    }
+
+    /// 解析相等操作数的（去 `?` 前缀的基类型名, 是否可空）。综合 expr_type_name、
+    /// Member 字段类型、以及「`let x = recv.method()/field`」局部初值返回类型三条路径。
+    pub(crate) fn resolve_eq_type(&self, id: NodeId) -> Option<(String, bool)> {
+        if let Some(ty) = self.expr_type_name(id) {
+            return Some((ty.trim_start_matches('?').to_string(), ty.starts_with('?')));
+        }
+        // Member 字段访问 `base.field`。
         if let Kind::Member { base, name, .. } = self.g.kind(id) {
             if let Some(ty) = self.member_field_type(*base, name) {
-                let b = ty.trim_start_matches('?');
-                return (self.eq_type_category(b), ty.starts_with('?'));
+                return Some((ty.trim_start_matches('?').to_string(), ty.starts_with('?')));
             }
         }
-        // 局部变量 `let node = recv.method(...)`：由 Call/Member 初值的返回类型推断
-        // （expr_type_name 的 VarDecl 分支只对构造器/NameRef 初值递归，不含方法调用返回）。
+        // 局部 `let x = recv.method(...)` / `let x = recv.field`：由初值类型推断。
         if let Kind::NameRef { decl: Some(d), .. } = self.g.kind(id) {
             if let Some(&decl_id) = self.decl_index.get(d) {
                 if let Kind::VarDecl {
@@ -341,20 +343,24 @@ impl Engine {
                     let init = *i;
                     if matches!(self.g.kind(init), Kind::Call { .. }) {
                         if let Some(ty) = self.expr_type_name(init) {
-                            let b = ty.trim_start_matches('?');
-                            return (self.eq_type_category(b), ty.starts_with('?'));
+                            return Some((
+                                ty.trim_start_matches('?').to_string(),
+                                ty.starts_with('?'),
+                            ));
                         }
                     }
                     if let Kind::Member { base, name, .. } = self.g.kind(init) {
                         if let Some(ty) = self.member_field_type(*base, name) {
-                            let b = ty.trim_start_matches('?');
-                            return (self.eq_type_category(b), ty.starts_with('?'));
+                            return Some((
+                                ty.trim_start_matches('?').to_string(),
+                                ty.starts_with('?'),
+                            ));
                         }
                     }
                 }
             }
         }
-        (EqCat::Unknown, nullable)
+        None
     }
 
     /// 解析 `base.field` 中 field 的（已映射）声明类型：先查全类构造参数，
@@ -405,28 +411,23 @@ impl Engine {
         None
     }
 
-    /// 若 `lhs`/`rhs` 两侧都解析为同一个「含 equals 方法」的引用类且均非空，
-    /// 返回该类名（用于渲染结构相等 `a.equals(b)`）。任一侧为 `this` 时不适用
-    /// （`this === other` 语义为引用相等，且会导致 equals 体内自递归）。
-    /// 保留供 R13 结构相等闭环使用（本轮桶 C 延后，见 render_eq_normalized）。
-    #[allow(dead_code)]
-    pub(crate) fn same_equals_class(&self, lhs: NodeId, rhs: NodeId) -> Option<String> {
+    /// 若 `lhs`/`rhs` 两侧解析为同一个「含 equals 方法」的引用类，返回
+    /// `(类名, lhs 可空, rhs 可空)`（供渲染空安全结构相等 `a.equals(b)` 派发）。
+    /// 任一侧为 `this` 时不适用（`this === other` 语义为引用相等，且会致 equals 体内自递归）。
+    pub(crate) fn same_equals_class(&self, lhs: NodeId, rhs: NodeId) -> Option<(String, bool, bool)> {
         for id in [lhs, rhs] {
             if let Kind::NameRef { original, .. } = self.g.kind(id) {
                 if original == "this" || original == "`this`" {
                     return None;
                 }
             }
-            if self.is_nullable_expr(id) {
-                return None;
-            }
         }
-        let lt = self.expr_type_name(lhs)?;
-        let rt = self.expr_type_name(rhs)?;
-        let lb = lt.trim_start_matches('?').split('<').next()?.trim();
-        let rb = rt.trim_start_matches('?').split('<').next()?.trim();
+        let (lt, ln) = self.resolve_eq_type(lhs)?;
+        let (rt, rn) = self.resolve_eq_type(rhs)?;
+        let lb = lt.split('<').next()?.trim();
+        let rb = rt.split('<').next()?.trim();
         if lb == rb && self.eq_type_category(lb) == EqCat::Ref && self.class_has_equals(lb) {
-            return Some(lb.to_string());
+            return Some((lb.to_string(), ln, rn));
         }
         None
     }

@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R12: **1150** | Option 战役三批累计: over-unwrap 15→0 / under-unwrap 79→40 / eq归一 76→22(双泛型__k2cjRefEq2+Some包装); R13 = 结构 equals 派发闭环(审计强制, 阻塞点已探针实证: ?Object 装箱 vs when-is); 余: under-unwrap L3 桶 40 / enum-body截断A / notEmpty E | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R13: **1135** | Option 战役四批累计(1243→1135): over-unwrap 清零/under-unwrap 79→40/eq 归一 76→18/==语义闭环 5/8 类(263 运行时断言证明); 残留 3 类 + when-is equals 阻塞于 flow-sensitive smart-cast(独立特性候选); 余: enum-body截断A/notEmpty E/under-unwrap L3 桶 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,14 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g Option 战役第四批 (2026-07-10) — == 结构语义闭环 5/8（auto R13/15）
+
+- **方案 A（equals 体先解包）胜出**（两方案探针均通, A 回归面小）: ① IsCheck 可空感知 `(x.isSome() && x.getOrThrow() is T)` ② TypeCast 可空感知 ③ `::class` 反射比较 → `!(other is EnclosingClass)` ④ 桶 C 空安全 `.equals()` 派发（this 侧不派发防 === 误改+自递归）。
+- **语义验收（审计强制项核心交付）**: 263_equals_dispatch 运行断言 14 行全绿——同值异实例 true / 不同值 false / null 组合 / refEq 身份桶互不干扰。R8 剥离的 -96 中 5/8 类结构语义闭环, 机制经运行时证明。
+- **残留 3 类（tag/nodes/identity_hash_map）**: `other as T` 裸语句 smart-cast 后成员访问仍作用在 Object——flow-sensitive smart-cast 跟踪, 独立深层特性候选（同时能闭 when-is equals + R11 D-cast 桶）。
+- **测量**: 1g 1150→**1135**; 2a 967（+3 级联, 记录）。262 的 Box 用例改纯引用类（when-is form 本轮不覆盖, 已注记）。
+- **回归**: 255/255 + 36/36 全绿。
 
 ### 1g Option 战役第三批 (2026-07-10) — eq 归一 76→22（auto R12/15）
 
