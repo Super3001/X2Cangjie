@@ -1145,7 +1145,9 @@ impl Parser {
                             Tok::Sym(s) if s == ">>" => { self.bump(); depth -= 2; }
                             Tok::Eof => break,
                             Tok::Ident(s) => {
-                                if depth == 1 { parts.push(s.clone()); }
+                                // 顶层类型实参逐个映射（`Int`→`Int64` 等）；泛型形参
+                                // （T/E/K/V）经 map_type 为恒等，无副作用。
+                                if depth == 1 { parts.push(map_type(&s)); }
                                 self.bump();
                             }
                             _ => { self.bump(); }
@@ -1168,7 +1170,15 @@ impl Parser {
                         self.skip_newlines();
                     }
                     self.expect_sym(")")?;
-                    superclass = Some(safe_name(&sup_name));
+                    // 保留父类泛型实参（`class Elements : Nodes<Element>(...)` →
+                    // `<: Nodes<Element>`）。裸 `<: Nodes` 会让 cjc 报
+                    // "generic type should be used with type argument" 并级联到
+                    // 子类全部 override 失配。父类非泛型时 type_args 为空，不变。
+                    superclass = Some(if type_args.is_empty() {
+                        safe_name(&sup_name)
+                    } else {
+                        format!("{}<{}>", safe_name(&sup_name), type_args)
+                    });
                 } else if self.is_kw("by") && is_delegatable_coll {
                     // 集合接口委托：捕获委托表达式，交由渲染层生成 `List<T>` 父类型 +
                     // 转发成员。不推入 interfaces（避免再打 MutableList marker）。

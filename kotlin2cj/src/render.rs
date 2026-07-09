@@ -1070,6 +1070,32 @@ impl Engine {
         let ps: Vec<String> = params.iter().map(|p| self.t(*p)).collect::<Option<_>>()?;
         // Determine open context early — needed to strip defaults from open funcs
         let in_open_class = self.func_in_open_class(id);
+        // seam 1/2：`<: List<T>` 委托类（Nodes/ParseErrorList 及子类 Elements）的
+        // 成员需对齐 std List<T> 面。
+        let list_iface_member = !is_main
+            && receiver_type.is_none()
+            && self
+                .owning_class_of(id)
+                .map_or(false, |cid| self.is_list_iface_class(cid));
+        // seam 1：List<T> 要求 `prop first/last`（抽象）。用户 0 参 first()/last()
+        // 方法转渲染为 prop（body 作为 getter 保留），避免与接口 prop 撞名。
+        if list_iface_member && params.is_empty() && (name == "first" || name == "last") {
+            let ret_ty = ret.clone().unwrap_or_else(|| "Unit".to_string());
+            let vis = if is_override && in_open_class {
+                "public open override "
+            } else if is_override {
+                "public override "
+            } else if in_open_class {
+                "public open "
+            } else {
+                "public "
+            };
+            let body_block = self.render_block(body)?;
+            return Some(format!(
+                "{}prop {}: {} {{\n{}get() {}\n}}",
+                vis, name, ret_ty, IND, body_block
+            ));
+        }
         // Cangjie: open functions AND interface/abstract methods cannot have
         // default parameter values. Strip " = <default>" suffix from params
         // when the function will be open or is an interface/abstract method.
@@ -1149,18 +1175,31 @@ impl Engine {
                 indent(&func_str, 1)
             ));
         }
-        let r = match &ret {
-            Some(r) => format!(": {}", r),
-            None if self.refers_name(body, name) => ": Unit".to_string(),
-            None if is_abstract => ": Unit".to_string(),
-            None if self.has_while_true_return(body) => ": Unit".to_string(),
-            None => String::new(),
+        // seam 2：std List<T> 的 `removeIf(...)` 返 Unit；Kotlin 用户 removeIf 返
+        // Bool（是否移除）不是子类型。委托类的 removeIf 强制返 Unit，原 body 包进
+        // 立即执行 lambda 丢弃布尔返回值（lambda 内 return 从 lambda 返回）。
+        let force_unit_removeif = list_iface_member && name == "removeIf" && ret.is_some();
+        let r = if force_unit_removeif {
+            ": Unit".to_string()
+        } else {
+            match &ret {
+                Some(r) => format!(": {}", r),
+                None if self.refers_name(body, name) => ": Unit".to_string(),
+                None if is_abstract => ": Unit".to_string(),
+                None if self.has_while_true_return(body) => ": Unit".to_string(),
+                None => String::new(),
+            }
         };
         let sig = format!("{}{}({}){}{}", name, gen_suffix, ps.join(", "), r, where_clause);
         if is_abstract {
             return Some(format!("public func {}", sig));
         }
         let mut b = self.render_block(body)?;
+        if force_unit_removeif {
+            // `{ <stmts> }` → `{\n    let _ = { => <stmts> }()\n}`（丢弃 Bool 返回）。
+            let lambda = format!("{{ =>{}", &b[1..]);
+            b = format!("{{\n{}let _ = {}()\n}}", IND, lambda);
+        }
         // while(true) 返回修复：在 while(true) 后添加不可达默认返回以满足仓颉类型检查
         if self.has_while_true_return(body) && ret.is_some() {
             let ret_str = ret.as_ref().unwrap();
@@ -1767,7 +1806,10 @@ impl Engine {
             (None, format!(
                 "{} func add(all!: Collection<{}>, at!: Int64): Unit {{\n{}{}.add(all: all, at: at)\n}}",
                 om, t, IND, target)),
-            (Some(("remove", 1)), format!(
+            // remove(at!: Int64) 用命名参数 `at!`，与 Kotlin 用户 `remove(element: T)`
+            // （位置参数）签名不同、不冲突——故不去重（key None），保证 List.remove(at)
+            // 恒被实现（否则用户 remove(element) 会误伤去重导致 unimplemented remove）。
+            (None, format!(
                 "{} func remove(at!: Int64): {} {{\n{}return {}.remove(at: at)\n}}",
                 om, t, IND, target)),
             (None, format!(

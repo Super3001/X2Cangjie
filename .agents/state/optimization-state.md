@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap) | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R6: **1403** | R6 委托簇 part 1: List<T> 真实映射+转发生成落地, not-member 145→131; R7 收尾四接缝(prop撞名/removeIf签名/override剥离成员集/直接实现型转发) | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R7: **1355** | R6-R7 委托簇打穿(1411→1355): List<T> 真实映射+转发+prop转渲染+override剥离成员集+父类泛型保留; R8 候选: enum-body截断簇A(~90)/静态import簇D(~60)/notEmpty簇E(~49)/NodeList直接实现型 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -80,6 +80,16 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R7 完成 — 委托簇收尾，三接缝合上（auto R2/15）
+
+- **行动簇**: mutable-collection-delegation part 2（R6 四接缝收尾）。
+- **修复（fixer 续作, 详见 fix-history R7 条）**: ① render.rs — List-iface 类用户 0 参 first()/last() 转渲染为 prop（调用点无需改写: `.first()` 已被 stdlib 映射为 `[0]`，ksoup 0 处裸调用）② removeIf 强制返 Unit + IIFE 丢弃 Bool ③ heuristics.rs — override_provably_unmatched 识别 List 委托类，仅保 iterator/next/hasNext ④ **parser.rs 父类泛型保留**（`Elements : Nodes<Element>` 曾渲染为裸 `<: Nodes`）——本轮最大单点，elements.cj 75→43。
+- **有据缓行**: NodeList 直接实现型不做投机实现（探针证 Boolean-return override 阻抗 + 自有存储），记 R8 候选; ParseErrorList 实为 by 委托，R6 已修（其 4 错系级联误报）。
+- **测量**: 1403 → **1355**（net -48）。unimplemented prop 2→0; override 43→28; nodes.cj 39→33; elements.cj 75→43。
+- **靶向测试**: 246_list_delegation_overrides。
+- **回归**: 238/238 single（231/231 expected 匹配）+ 36/36 project 全绿。
+- **判据**: R6 0.57% + R7 3.4% 连续 2 轮 <10% → 切换 target。委托簇（一个根因簇跨 R6-R7 消灭）计簇数进展 1。层 1 改选 2a（parse 层，泛化信号强，portfolio 优先）。
 
 ### Phase 1 — 1g full-ksoup (2026-07-09) ⏳ R6 完成 — mutable-collection 委托簇 part 1（auto R1/15）
 

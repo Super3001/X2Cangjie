@@ -254,34 +254,84 @@ impl Engine {
         false
     }
 
+    /// 查找成员节点 `member_id` 直接所属的类节点 id。
+    /// 嵌套类（如 Element 内的 NodeList）成员的祖父是外层类，故先查直接父，
+    /// 再查父的父（成员的直接父可能是 Block）。
+    pub(crate) fn owning_class_of(&self, member_id: NodeId) -> Option<NodeId> {
+        let parent_id = self.g.nodes[member_id].parent?;
+        if matches!(self.g.kind(parent_id), Kind::Class { .. }) {
+            return Some(parent_id);
+        }
+        if let Some(gp) = self.g.nodes[parent_id].parent {
+            if matches!(self.g.kind(gp), Kind::Class { .. }) {
+                return Some(gp);
+            }
+        }
+        None
+    }
+
+    /// 类是否渲染为 `<: List<T>`（Kotlin `MutableList`/`List` 接口委托，或其子类）。
+    /// 用于 seam 1/2/3：这类类的父类型是 std `List<T>`（继承 `Collection`/`Iterable`），
+    /// 需要 prop first/last、removeIf 返 Unit、override 按 List 成员集剥离。
+    /// 直接 `<: MutableList` marker（NodeList，无委托）不算——它父类型是空 marker。
+    pub(crate) fn is_list_iface_class(&self, cid: NodeId) -> bool {
+        self.is_list_iface_class_rec(cid, 0)
+    }
+
+    fn is_list_iface_class_rec(&self, cid: NodeId, depth: usize) -> bool {
+        if depth > 8 {
+            return false;
+        }
+        if let Kind::Class {
+            supertype_delegations,
+            superclass,
+            ..
+        } = self.g.kind(cid)
+        {
+            if supertype_delegations
+                .iter()
+                .any(|d| matches!(d.supertype.as_str(), "MutableList" | "List"))
+            {
+                return true;
+            }
+            // 子类继承 List 委托类（`class Elements <: Nodes<Element>`）。
+            if let Some(sc) = superclass {
+                let base = sc.split('<').next().unwrap_or(sc).trim();
+                if let Some(&sup_cid) = self.class_index.get(base) {
+                    return self.is_list_iface_class_rec(sup_cid, depth + 1);
+                }
+            }
+        }
+        false
+    }
+
     /// override 剥离判定：若能证明所有父类型都不可能声明成员 `fn_name`
     /// （无父类、且接口全部是已知成员集的 stub/内建接口），返回 true。
     /// 此时保留 `override` 会让 cjc 报 "'override' function does not have
     /// an overridden function in its supertype"（marker stub 接口场景），
     /// 渲染时应剥掉。任一接口来源未知（用户接口等）即保守返回 false。
     pub(crate) fn override_provably_unmatched(&self, func_id: NodeId, fn_name: &str) -> bool {
-        let mut class_id = None;
-        if let Some(parent_id) = self.g.nodes[func_id].parent {
-            // 先查直接父节点：嵌套类（如 Element 内的 NodeList）成员的
-            // 祖父是外层类，先查祖父会误判所属类。
-            if matches!(self.g.kind(parent_id), Kind::Class { .. }) {
-                class_id = Some(parent_id);
-            } else if let Some(gp) = self.g.nodes[parent_id].parent {
-                // parent is a Block; check the Block's parent for Class
-                if matches!(self.g.kind(gp), Kind::Class { .. }) {
-                    class_id = Some(gp);
-                }
-            }
-        }
-        let Some(cid) = class_id else {
+        let Some(cid) = self.owning_class_of(func_id) else {
             return false;
         };
         if let Kind::Class {
             superclass,
             interfaces,
+            supertype_delegations,
             ..
         } = self.g.kind(cid)
         {
+            // List/MutableList 接口委托类（渲染 `<: List<T>`）：std List<T> 成员集已知。
+            // 仅 Iterable/Iterator 面成员（iterator/next/hasNext）可 override；其余
+            // 用户 override（equals/hashCode/set/removeAt/removeAll/retainAll/remove(element) 等）
+            // Kotlin 签名与 Cangjie List 面不匹配，一律剥离为普通方法。first/last 在
+            // 渲染层已转 prop（不走此函数），removeIf 已改 Unit（仍是本类成员，剥离 override）。
+            let has_list_deleg = supertype_delegations
+                .iter()
+                .any(|d| matches!(d.supertype.as_str(), "MutableList" | "List"));
+            if has_list_deleg && superclass.is_none() {
+                return !matches!(fn_name, "iterator" | "next" | "hasNext");
+            }
             if superclass.is_some() || interfaces.is_empty() {
                 return false;
             }
