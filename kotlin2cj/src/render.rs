@@ -833,6 +833,26 @@ impl Engine {
                 return Some(crate::parser::safe_name(name));
             }
         }
+        // R19 簇: 多级嵌套类型限定链 `Document.OutputSettings.Syntax.xml`——中间
+        // `Syntax` 的基 `Document.OutputSettings` 是 Member（非 NameRef），故上方
+        // 单级 NameRef 折叠不触发, 残留 `OutputSettings.Syntax`（"'Syntax' is not a
+        // member of class 'OutputSettings'"×7）。补: base 是 Member 且整条链解析为
+        // 类名限定符, name 又是其嵌套类型时, 折叠为（提升后的）裸名。
+        // 仅在 lifted_nested 注册表确认 (base_class, name) 命中时折叠——比单级更严:
+        // 单级的 `is_class_name(name)` 兜底在多级不安全, 因 name 可能是另一个父的
+        // 嵌套类（test 221: `Token.TokenType.StartTag` 的 StartTag 既是枚举条目又是
+        // Token 的嵌套类, 兜底会把枚举条目误折成裸类名 → mismatched types）。
+        if !safe {
+            if let Kind::Member { .. } = self.g.kind(base) {
+                if let Some(base_class) = self.type_qualifier_class(base) {
+                    if let Some(lifted) =
+                        self.lifted_nested.get(&(base_class.clone(), name.to_string()))
+                    {
+                        return Some(crate::parser::safe_name(lifted));
+                    }
+                }
+            }
+        }
         // super.method() → super.method() (no backtick escaping for super keyword)
         if let Kind::NameRef { original, .. } = self.g.kind(base) {
             if original == "`super`" || original == "super" {
@@ -950,6 +970,35 @@ impl Engine {
             }
         };
         Some(format!("{}{}{}", b, dot, crate::parser::safe_name(mapped)))
+    }
+
+    /// 多级嵌套类型限定链解析：`id` 是否为纯**类型限定符**（每级都是类名或其
+    /// 嵌套类型），是则返回链末端解析出的（提升后）类型名。用于折叠跨文件的
+    /// `Document.OutputSettings.Syntax` 多级限定——render_member 的单级 NameRef
+    /// 折叠无法处理中间 Member 基。仅接受非 `?.` 链且每级都解析为已知类型（值
+    /// 表达式如 `out.syntax()` 的接收者 `out` 非 class 名 → None, 不误折叠）。
+    fn type_qualifier_class(&self, id: NodeId) -> Option<String> {
+        match self.g.kind(id) {
+            Kind::NameRef { original, .. } => {
+                if self.is_class_name(original) {
+                    Some(original.clone())
+                } else {
+                    None
+                }
+            }
+            Kind::Member { base, name, safe } if !*safe => {
+                let parent = self.type_qualifier_class(*base)?;
+                if let Some(lifted) = self.lifted_nested.get(&(parent.clone(), name.clone())) {
+                    return Some(lifted.clone());
+                }
+                if self.is_class_name(name) || self.enum_entries(name).is_some() {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 
     fn render_type_constant(&self, base: &str, name: &str) -> Option<String> {

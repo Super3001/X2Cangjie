@@ -761,3 +761,40 @@
   - 2a 是 ⏸ 暂停目标, 不进回归门禁; 但 render 改动可能外溢 2a（如本轮 +138 教训）——**render 侧改动务必重译 2a 核对**, 别只测 1g。
 - **探针/产物位置**: 探针 `output/probe/{enum_static,enum_member_probe}/`; 本轮产物 `output/target_1g_r18`(1051)/`output/target_2a_r18`(964); 聚类工具 `output/diagnose_clusters.py <log> --top N`。
 - **R19 首推**: is-not-member-of-class×113（Node×14/StringBuilder×14/EscapeMode×9/OutputSettings×8——集中在 DOM 核心类的成员缺失, 疑 stub/API 映射, 单簇高密度）或 mismatched×244（最大但最杂）。
+
+### 2026-07-10 — RENDER+RENDER_CALLS — auto R4/20 簇 not-member 子簇①②：嵌套类型限定链 + appendCodePoint（上代 fixer 代码验收 + 兜底撞车修复）
+
+- **战役**: auto R4/20（1g 战役轮 R19），not-member-of-class ×113 混桶的两个子簇。基线 output/target_1g_r18 = 1051。
+- **来源**: 上代 fixer（会话 55eaa586）写完 render.rs/render_calls.rs 改动 + 268/269 靶向测试后撞限额中断，未跑回归；本代接力验收，发现并修复兜底撞车，跑完全套测量。
+- **子簇① 真根因（嵌套类型限定链, render.rs +48）**: ksoup `Document.OutputSettings.Syntax.xml` ×7——render_member 既有「单级 NameRef 折叠」(`Parent.Nested` → 提升后裸名) 只在 base 是 NameRef 时触发。`Document.OutputSettings.Syntax` 中间 `Syntax` 的基 `Document.OutputSettings` 是 Member（非 NameRef），折叠不触发 → 残留 `OutputSettings.Syntax`，cjc 报 "'Syntax' is not a member of class 'OutputSettings'"。
+- **子簇① 修复（render.rs, L2 新函数 + 分支）**:
+  1. 新增 `type_qualifier_class(id) -> Option<String>`：递归判定 id 是否为纯类型限定符链（每级是类名或其嵌套类型，非 `?.` 链，非值表达式接收者如 `out`），是则返回链末端解析出的（提升后）类型名。NameRef 分支：is_class_name 则返回裸名；Member 分支：递归 base 得父类，查 lifted_nested 或 is_class_name/enum_entries 解析末端。
+  2. render_member 在 `!safe` 且 base 是 Member 时：`type_qualifier_class(base)` 得 base_class，再查 `lifted_nested.get((base_class, name))` 命中则折叠为提升后裸名。
+- **子簇② 真根因（appendCodePoint, render_calls.rs +11）**: ksoup Tokeniser/TokenData/TokenQueue/StringUtil 用 `StringBuilder.appendCodePoint(Int)` ×6。Cangjie StringBuilder core 只有 append(Rune) 等重载，无 appendCodePoint → 报 "'appendCodePoint' is not a member of class 'StringBuilder'"。
+- **子簇② 修复（render_calls.rs, L1）**: 在 appendCodePoint 调用处映射 `sb.appendCodePoint(cp)` → `sb.append(Rune(UInt32(cp)))`。**无 looks_string_builder 门**（该谓词漏字段/nullable 解包接收者），appendCodePoint 是 StringBuilder 独占方法名，按方法名识别即可。
+- **关键修复（验收期, 兜底撞车, L1）**: 上代 fixer 原码在子簇①的多级折叠后跟了一条兜底 `if enum_entries(name).is_some() || is_class_name(name) { return bare name }`（照搬单级 line 830-834）。**test 221 撞车**: `Token.TokenType.StartTag`——StartTag 既是 TokenType 的枚举条目，又是 Token 的嵌套类（line 25 `class StartTag : Tag()`）。兜底里 `is_class_name("StartTag")`=true（因 Token.StartTag 嵌套类被提升存在），把枚举条目 `Token.TokenType.StartTag` 整条误折成裸 `StartTag`（指向那个嵌套类），赋值给 `t.type: TokenType` → mismatched types，回归 261/261→260/261。
+  - **移除多级兜底**：多级路径只在 `lifted_nested` 注册表**确认** (base_class, name) 命中时折叠，不再用 `is_class_name(name)` 兜底。
+  - **为何单级兜底安全而多级不安全**：单级 `Parent.name` 里 name 必是直接父 Parent 的嵌套类型（base 就是 Parent 本身），`is_class_name(name)` 命中即合理；多级 `X.Y.Z.W` 里 name 的「父」是 type_qualifier_class 解析出的末端类型，`is_class_name(name)` 只能证明 name 是**某处**的类，不能证明它是该末端的嵌套类型 → 跨父撞车。
+  - **不回退子簇①收益**：268 实测 Syntax 族全由首分支（lifted_nested 命中）折叠，兜底非必需；移除后 268 仍绿。
+- **层级**: 子簇① L2（新函数 + 分支）；子簇② L1（映射）；兜底修复 L1（删 3 行）。共 render.rs +48/-3、render_calls.rs +11。
+- **测试**:
+  - 268_nested_type_qualifier_chain：3 级链 `Document.OutputSettings.Syntax`，type 位（isXml 参数）+ 成员位（.xml/.html 枚举条目访问）+ 裸/限定混用 + 主类带嵌套 OutputSettings 类再带嵌套 Syntax 枚举 + 跨文件引用全限定。
+  - 269_append_codepoint：`sb.appendCodePoint(72/105/0x1F600)`（含多字节 emoji）+ nullable 接收者 `sb?.appendCodePoint` 经 render_call_recv 解包后映射。
+  - 回归 259→**261/261 单文件** + **36/36 项目** 全绿（含新 268/269；221 修复后复绿）。
+- **测量**:
+  - **1g（主战果）**: 1051 → **1044（-7）**。聚类 not-member 113→101（-12）:
+    - Syntax×7 → 0（子簇①首分支清）
+    - OutputSettings×8 → 0（同族清；这些是 `Document.OutputSettings` 2 级引用，base NameRef Document，单级本应清——R18 未清疑因类型位 render 路径，本轮 type_qualifier_class 多级路径顺带覆盖）
+    - StringBuilder 14→8（子簇② appendCodePoint -6）
+    - ArrayList<Node>×15 / Node×14 / EscapeMode×9 不变（未打）
+  - **~9 honest reveals**: 折叠 `OutputSettings.Syntax`→裸 + appendCodePoint 映射解遮蔽下游错（getOrThrow×5 / add×7 / tag×6 / Object×8 族部分为新表面，非 not-member 回潮）。净 -7。
+  - **2a（外溢核对, 仅记录）**: 964 → **964（+0 中性, 无外溢）**。type_qualifier_class 严折叠（注册表确认才折）未掀 datetime Directive 抽象类层级——与 R18 提升嵌套 class 掀 +138 教训对照，严折叠避坑成功。appendCodePoint 与 datetime 无关。
+- **回归**: 单文件 259→**261/261** + 项目 **36/36** 全绿三阶段（含新 268/269 + 221 复绿）。编译日志经 Git Bash 重定向生成（`output/build_target.sh` 包装，避 PowerShell Out-File 的 e/E→ESC 损坏）。
+- **R20 候选（= auto R5/20, 须战略校准 + 防刷冷启动审计）**:
+  1. **mismatched×245**（最大簇，Option/unwrap 类型推断，L3 高风险，需细分桶）
+  2. **undeclared id×124**（code/_parser/append×9 等，长尾语义）
+  3. **not-member×101 残余**（ArrayList<Node>×15 / Node×14 / EscapeMode×9，疑 stdlib/API 映射，低风险增量，可批量探查有无真实 API）
+  4. **簇A真方法分派 read**（高风险，须 tokeniser 语义层先收敛；探针已证 match(this) 机制可行）
+  5. **nested-class-in-interface**（须 datetime 抽象类层级先修 missing-abstract + shadow-member 再放开 class 提升）
+  6. **String.replace(Rune→Regex) 误映射**（R17 揭示的独立簇）
+- **auto R4/20**。下一轮 auto R5/20 为定期校准节点。

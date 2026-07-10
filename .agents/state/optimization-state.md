@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R18: **1051**（auto 18 轮起点 1411, -26%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15, render_interface 只遍历Func静默丢弃嵌套enum→提升顶层, 引用侧已展平无需重限定; 只打enum, nested-class-in-interface缓R19避2a+138); 下一战役候选(R19): mismatched×244/undeclared id×124/is-not-member-of-class×113(Node/StringBuilder/EscapeMode)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R19: **1044**（auto 19 轮起点 1411, -26%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15) + R19 簇 not-member 子簇①② 嵌套类型限定链+appendCodePoint(-7, Syntax×7+OutputSettings×8清+StringBuilder-6=appendCodePoint; ~9 honest reveals; 2a 中性 964无外溢; 验收期修兜底撞车: 移除多级is_class_name兜底避221 StartTag枚举条目/类名撞车); 下一战役候选(R20=auto5校准轮): mismatched×245/undeclared id×124/not-member×101(ArrayList<Node>×15/Node×14/EscapeMode×9)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,19 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g 簇 not-member (2026-07-10) — 子簇①② 嵌套类型限定链 + appendCodePoint（auto R4/20, 战役轮 R19）
+
+- **战役**: auto R4/20（1g 战役轮 R19），not-member-of-class ×113 混桶的两个子簇。基线 output/target_1g_r18 = 1051。上代 fixer 写完代码撞限额中断（未跑回归），本代接力验收 + 修兜底撞车。
+- **子簇① 嵌套类型限定链（render.rs, +48）**: ksoup `Document.OutputSettings.Syntax.xml` ×7——中间 `Syntax` 的基 `Document.OutputSettings` 是 Member（非 NameRef），render_member 单级 NameRef 折叠不触发, 残留 `OutputSettings.Syntax` 报 "'Syntax' is not a member of class 'OutputSettings'"。新增 `type_qualifier_class()` 递归解析纯类型限定符链, base 是 Member 且整链解析为类名限定符、name 是其嵌套类型时折叠为提升后裸名。
+- **子簇② appendCodePoint（render_calls.rs, +11）**: ksoup Tokeniser/TokenData/StringUtil ×6——Cangjie StringBuilder 无 appendCodePoint, 有 append(Rune)。映射 `sb.appendCodePoint(cp)` → `sb.append(Rune(UInt32(cp)))`, 含 nullable 解包接收者。
+- **关键修复（验收期, 兜底撞车）**: 上代 fixer 原码含 `enum_entries(name)||is_class_name(name)` 兜底折叠多级链末端——**test 221 撞车**: `Token.TokenType.StartTag` 的 StartTag 既是 TokenType 枚举条目又是 Token 嵌套类, 兜底把枚举条目误折成裸类名 → mismatched types（261/261 退到 260/261）。**移除多级兜底, 仅在 lifted_nested 注册表确认 (base_class,name) 命中时折叠**（比单级更严; 单级兜底安全因 name 必是直接父的嵌套类型, 多级不成立）。268 首分支已足, 不需兜底。
+- **测试**: 268_nested_type_qualifier_chain（3 级链 Document.OutputSettings.Syntax, 裸/限定混用 + isXml type 位 + 枚举条目访问）; 269_append_codepoint（nullable 接收者 + emoji codepoint 0x1F600）。回归 259→**261/261** + 36/36。
+- **测量**:
+  - **1g**: 1051 → **1044（-7）**。not-member 113→101（-12）: Syntax×7 清 + OutputSettings×8 清 + StringBuilder 14→8（appendCodePoint -6）; ArrayList<Node>×15/Node×14/EscapeMode×9 不变。**~9 honest reveals**: 折叠/映射解遮蔽下游错（getOrThrow×5/add×7/tag×6/Object×8 族部分为新表面）。净 -7。
+  - **2a（外溢核对）**: 964 → **964（+0 中性, 无外溢）**。type_qualifier_class 严折叠（注册表确认才折）未掀 datetime Directive 层级——与 R18 +138 教训对照, 严折叠避坑成功。
+- **R20 候选（= auto R5/20, 须战略校准 + 防刷冷启动审计）**: mismatched×245（最大但最杂, Option/unwrap L3 高风险）/ undeclared id×124（code/_parser/append×9 等）/ not-member×101 残余（ArrayList<Node>×15/Node×14/EscapeMode×9, 疑 stub/API 映射低风险增量）/ 簇A真方法分派（read, 高风险, 须 tokeniser 语义层先收敛）/ nested-class-in-interface（须 datetime 抽象类层级先修）/ String.replace(Rune→Regex)。
+- **auto R4/20**。下一轮 auto R5/20 为定期校准节点（三张地形图重估 + 防刷软柿子审计）。
 
 ### 1g 簇 A (2026-07-10) — FilterResult 嵌套 enum-in-interface 提升顶层（auto R3/20, 战役轮 R18, 本代 fixer 收官）
 

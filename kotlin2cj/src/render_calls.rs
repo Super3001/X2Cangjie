@@ -210,6 +210,17 @@ impl Engine {
             }
             "toChar" if args.is_empty() => Some(format!("Rune(UInt32({}))", b)),
 
+            // Kotlin/Java `StringBuilder.appendCodePoint(Int)` 追加一个 Unicode 码点。
+            // 仓颉 StringBuilder 有 `append(Rune)` 但无 appendCodePoint（core std 实证
+            // API: append 多载 + reset + toString, 无 insert/appendCodePoint）。码点
+            // Int → Rune 用 `Rune(UInt32(cp))`（同 toChar arm 已证 cjc 1.0.5 可编译）。
+            // appendCodePoint 仅存在于 StringBuilder 语境, 无需 looks_string_builder
+            // 门控（该谓词对 field/`?SB`.getOrThrow() 接收者有盲区, 会漏掉 token_data
+            // 等 6 个调用点中的一半）。b 已由 render_call_recv 处理可空解包。
+            "appendCodePoint" if args.len() == 1 => {
+                Some(format!("{}.append(Rune(UInt32({})))", b, self.t(args[0])?))
+            }
+
             // Kotlin null-aware 扩展 `T?.isNullOrEmpty()`（CharSequence/Collection 皆有）：
             // 语义 = receiver 为 null **或** 空。绝不能对可空接收者插 `.getOrThrow()`
             // （那会在 null 时抛异常，正好抹掉 null 分支），故用**原始未解包**接收者。
