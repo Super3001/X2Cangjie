@@ -686,3 +686,23 @@
   - **2a（外溢）**: 967 → **964（-3，改善）**。datetime 侧 isNullOrEmpty 少量命中，无回归（远低于 +10 阈值）。
 - **回归**: 单文件 255/255 → **256/256** 全绿三阶段（翻译/编译/运行，含新 264）。
 - **分账**: 无新表面需适配——形参可空性**未收紧**（诊断证伪，`?String` 本就正确），故不存在「调用点真传 Option 被收紧误伤」的场景；纯属扩展方法映射补全 + 接收者解包纠偏。
+
+### 2026-07-10 — PARSER — auto R1/20 簇 A：enum-entry-body 截断阶段①（68/24 条目全保留）
+
+- **战役**: auto R1/20（1g 战役轮 R16），簇 A「enum-body 截断」。基线 output/target_1g_r15 = 1084（本机 error 行计）。
+- **证实（真根因）**: Kotlin enum 条目带匿名类体（`Data { override fun read(t,r){...} }`，即每条目 override 抽象方法）时，parser 条目循环（parse_enum）读完条目名后只处理 `(entry_args)` 与 `,`，条目体 `{` 两者皆不匹配 → **循环在首个条目后 break**。TokeniserState 68 条目仅存 Data、HtmlTreeBuilderState 24 条目仅存 Initial，其余全丢 → 引用处 "not a member of enum TokeniserState"×13 + 大量 tokeniser 级联。
+- **二次暴露的致命错（本轮同修）**: 阶段①令 HtmlTreeBuilderState 首次被完整解析后，`;` 后成员区的 token-by-token bump 走进嵌套 `object Constants { ... }` 体，在其**内层 `}`** 误判为 enum 结束 → 把 enum 自身 `}` 与 `public companion object {...}` 泄漏到顶层，`expected declaration, found 'companion'` 致命 parse 错（1 error 即中断整包）。
+- **修复（parser.rs parse_enum，阶段①·L2，两处）**:
+  1. 条目循环：`entries.push` 后 `skip_newlines`，若 `is_sym("{")` 则 `skip_balanced_braces()?` 跳过条目体、保留条目名，再走既有 `,` 检查。条目体的 override 方法本轮**丢弃**（enum_members 本就未存入 Kind::Enum，见既有注释）。
+  2. `;` 后成员区 else 分支：`is_sym("{")` → `skip_balanced_braces` 平衡跳过（嵌套 object/block 体），否则才 `bump()`。防内层 `}` 提前终结成员环。
+- **层级**: L2（parser.rs 单函数两点，纯 parse 侧，不涉 render）。
+- **测试**: 新增 265_enum_entry_body——条目体 + `;` + 抽象方法 + 嵌套 `object Constants` + `companion object` 全 shape（复刻 TokeniserState/HtmlTreeBuilderState 双 bug）；断言 4 条目全存活（First/Third/Last 引用 + == 判定）+ 无 companion 泄漏；翻译→cjc→运行 exact-match 5 行全绿。
+- **测量**:
+  - **1g（主战果）**: 1084 → **1072（-12）**。TokeniserState not-member 13→8、"is not a member of enum" 簇 49→43、undeclared id 144→136；68+24 条目结构全对，零新表面。残 TokeniserState×8 = companion 常量（nullChar/eof）+ read 方法访问 → 阶段②。
+  - **2a（外溢，仅记录）**: 重译 target_2a_r16 = **964**（≈基线 963/964，parser enum 改动对 2a 中性，无回归）。
+- **回归**: 单文件 256→**257/257** + 项目 **36/36** 全绿三阶段（含新 265）。
+- **阶段②（探针证可行，落 R17 候选，本轮未实现）**: 仓颉 enum 可挂成员 func 用 `match(this)` 集中分派——探针 output/probe/enum_member_probe/probe.cj 经 cjc 1.0.5 编译+运行通过（`St.TagOpen.read(10)`→12、toString→TagOpen）。**未实现原因**: 完整阶段②需(1)解析期捕获每条目体(2)渲染抽象方法为 match(this) 分派(3)渲染 companion（常量 + ~15 私有 helper 如 readCharRef）；条目体重度引用 companion 作用域符号，若不同步渲染 companion，分派体无法编译，部分实现极可能净负 → 整体排 R17。
+- **R17 候选（基于 post 聚类）**:
+  1. **簇 A 阶段②**（enum 成员 func + match(this) 分派 + companion 渲染）——机制已探针验证，需 parse 捕获 + render + companion 三件套。
+  2. **FilterResult 嵌套 enum-in-interface 未提升**（×16 = undeclared id×12 + type×4）——`NodeFilter` interface 内 `enum class FilterResult` 既不在 interface 也无顶层输出，疑 renderer 只从 class 路径提升嵌套 enum（line 1599/1833），interface 路径缺提升。与簇 A 同为「结构截断」族，根因在 render 提升侧，L2 可能较廉。
+  3. mismatched types×241 / undeclared identifier×136（长尾语义层）。

@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R15: **1087**（auto 15 轮起点 1411, -23%） | Option 战役四批(over-unwrap 清零/under-unwrap 79→40/eq 76→18/==闭环 5/8, 263 运行时断言) + R15 isNullOrEmpty 空安全映射(-59, 证伪"形参过度可空化", 真根因=宿主体级联); 下一战役候选: enum-body截断A(~90, L3)/flow-sensitive smart-cast(闭 equals 3 类+D-cast 桶)/父类型位成员合成(剪枝轮排期件) | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R16: **1072**（auto 16 轮起点 1411, -24%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A enum-entry-body 截断阶段①(-12, 68/24 条目全保留, 修 HtmlTreeBuilderState companion 泄漏); 下一战役候选(R17): 簇A阶段②(enum 成员 func+match(this) 分派, 探针已证可行)/FilterResult 嵌套enum-in-interface未提升(×16)/flow-sensitive smart-cast/父类型位成员合成 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,16 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g 簇 A (2026-07-10) — enum-entry-body 截断阶段①, 68 条目全保留（auto R1/20, 战役轮 R16）
+
+- **证实（真根因一句话）**: Kotlin enum 条目带匿名类体（`Data { override fun read(...) {...} }`）时, parser 条目循环在读完条目名后只认 `(args)` 或 `,`, 条目体 `{` 两者皆不匹配 → 循环首个条目后即 break, **丢失其余 67/23 条目**（TokeniserState 仅存 Data, HtmlTreeBuilderState 仅存 Initial）→ 引用处全炸 "not a member of enum"。
+- **修复（parser.rs, 阶段①·L2）**: (a) 条目名后若遇 `{` 则 `skip_balanced_braces` 跳过体、保留名; (b) `;` 后成员区 else 分支遇 `{` 也平衡跳过——否则逐 token bump 会走进嵌套 `object Constants {...}` 体, 在其内层 `}` 误判 enum 结束, 泄漏 `companion` 到顶层（HtmlTreeBuilderState 首次全解析后暴露的 `expected declaration, found 'companion'` 致命错, 已修）。条目体的 override 方法本轮丢弃（enum_members 本就未存入 Kind::Enum）。
+- **测量**: 1g 1084→**1072**（-12, TokeniserState not-member 13→8, undeclared id 144→136; 68+24 条目结构全对）; 2a 964（重译无变化, parser 改动对 2a 中性）。残 TokeniserState×8 = companion 常量(nullChar)+read 方法访问, 属阶段②。
+- **阶段②（本轮探针证可行, 落 R17 候选）**: 仓颉 enum 可挂成员 func 用 `match(this)` 集中分派（探针 output/probe/enum_member_probe 编译+运行通过, 输出 12/TagOpen）。**未本轮实现**: 完整阶段②需(1)捕获每条目体(2)渲染抽象方法为 match 分派(3)渲染 companion(常量+~15 私有 helper)——条目体重度引用 companion 作用域符号, 部分实现极可能净负, 故整体排 R17。
+- **FilterResult 候选（机制不同, 仅记录）**: `NodeFilter` interface 内嵌套 `enum class FilterResult`——parser 走 parse_class 成员环 `is_kw("enum")` 应能解析, 但输出中 FilterResult 既不在 interface 也无顶层定义 → **嵌套 enum 未被 renderer 从 interface 提升到顶层**（class 路径有提升 line 1599/1833, interface 路径疑缺）。×16 实例(undeclared id×12 + type×4)。R17 候选, 与簇 A 阶段①同为「结构截断」族但根因在 render 提升侧。
+- **测试**: 265_enum_entry_body（条目体+`;`+抽象方法+嵌套 object+companion 全 shape, 断言 4 条目全存活+无 companion 泄漏）。回归 **257/257 单文件 + 36/36 项目全绿**。
+- **auto R1/20**。
 
 ### 1g 簇 E (2026-07-10) — isNullOrEmpty 空安全映射, 证伪"过度可空化"（auto R15/15, 终轮）
 

@@ -1043,6 +1043,14 @@ impl Parser {
                 name: entry_name,
                 args: entry_args,
             });
+            // 枚举项带匿名类体（每项 override 抽象方法，如 TokeniserState 的
+            // `Data { override fun read(...) {...} }`）：先跳过体、保留条目名，
+            // 否则条目名后紧跟 `{` 会让 comma 检查落空、循环在首个条目后就 break，
+            // 丢失其余 60+ 条目。逐条目体方法的翻译是后续语义轮次的工作（阶段②）。
+            self.skip_newlines();
+            if self.is_sym("{") {
+                self.skip_balanced_braces()?;
+            }
             self.skip_newlines();
             if !self.eat_sym(",") {
                 break;
@@ -1086,8 +1094,14 @@ impl Parser {
                             self.bump();
                         }
                     }
+                } else if self.is_sym("{") {
+                    // 其他成员的块体（如嵌套 `object Constants { ... }` 的体）：
+                    // 必须整块平衡跳过，否则逐 token bump 会走进嵌套体、在其内层
+                    // `}` 处误判为 enum 结束，把 enum 自身的 `}` 与后续 companion
+                    // 泄漏到顶层（HtmlTreeBuilderState 回归）。
+                    let _ = self.skip_balanced_braces();
                 } else {
-                    // 跳过其他成员
+                    // 跳过其他成员（标识符、修饰符、类型等非块 token）
                     self.bump();
                 }
                 self.skip_seps();
