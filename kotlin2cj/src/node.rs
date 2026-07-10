@@ -86,6 +86,11 @@ pub enum Kind {
         entries: Vec<EnumEntry>,
         /// 枚举构造器参数列表（如 `val dx: Int`）。
         params: Vec<CtorParam>,
+        /// companion object 内的 public 常量/字段声明（VarDecl 节点）。
+        /// 仓颉 enum 不支持 static 成员（实测 `unexpected variable declaration in enum body`），
+        /// 故这些需提升为同文件顶层 `let`，外部 `EnumName.const` 引用重写为提升名。
+        /// R17 簇A阶段②: 仅捕获 public 标量常量; companion 私有 helper 与条目体方法留 R18。
+        companion_consts: Vec<NodeId>,
     },
     /// 局部变量 / 顶层变量 / 属性声明。
     VarDecl {
@@ -447,10 +452,15 @@ impl Graph {
                 }
                 v.push(*body);
             }
-            Kind::Enum { entries, .. } => {
+            Kind::Enum {
+                entries,
+                companion_consts,
+                ..
+            } => {
                 for e in entries {
                     v.extend(&e.args);
                 }
+                v.extend(companion_consts);
             }
             Kind::VarDecl {
                 name_node, init, ..

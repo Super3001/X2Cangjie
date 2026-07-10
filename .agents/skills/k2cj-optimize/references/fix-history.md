@@ -706,3 +706,27 @@
   1. **簇 A 阶段②**（enum 成员 func + match(this) 分派 + companion 渲染）——机制已探针验证，需 parse 捕获 + render + companion 三件套。
   2. **FilterResult 嵌套 enum-in-interface 未提升**（×16 = undeclared id×12 + type×4）——`NodeFilter` interface 内 `enum class FilterResult` 既不在 interface 也无顶层输出，疑 renderer 只从 class 路径提升嵌套 enum（line 1599/1833），interface 路径缺提升。与簇 A 同为「结构截断」族，根因在 render 提升侧，L2 可能较廉。
   3. mismatched types×241 / undeclared identifier×136（长尾语义层）。
+
+### 2026-07-10 — PARSER+RENDER — auto R2/20 簇 A 阶段②：enum companion 标量常量提升顶层
+
+- **战役**: auto R2/20（1g 战役轮 R17），簇 A 阶段②。基线 output/target_1g_r16 = 1072。
+- **决策转向（证据驱动，与协调者预设风险模型相反，已记录理由）**: 协调者预设「方法分派落地安全 / companion 渲染有风险」。**两项实测反转该模型**:
+  1. **仓颉 enum 不支持 static 成员**（探针 `static let x` → `error: unexpected variable declaration in enum body`）→ companion 常量**必须提升到同文件顶层**，是独立于既有「class companion→static」机制的全新 render 路径。
+  2. **真方法分派（渲染 68 个 read 条目体）会掀开 tokeniser 语义层**——条目体调用的 t.emit/r.consume/Token.EOF() 等所在文件 token.cj(62 错误行)/character_reader.cj(34)/tokeniser.cj(22) 本就带 118+ 错误行，条目体一旦渲染即暴露这层隐藏错误，极可能净负。
+  - 故本轮落**安全净正切片 = companion 标量常量提升**（真方法分派留 R18，探针已证 match(this) 机制可行）。探针另证：enum 成员 func 内可 bare 引用其它构造子、可调顶层 func/let（output/probe/enum_static）。
+- **真根因**: TokeniserState.nullChar（companion `public const val nullChar: Char`）被 CharacterReader/Token 等 7 处外部引用为 `TokeniserState.nullChar`。仓颉 enum 无 static 落脚 → 全报 "'nullChar' is not a member of enum 'TokeniserState'"。
+- **修复（L3，parser.rs + node.rs + render.rs）**:
+  1. **node.rs**: `Kind::Enum` 增字段 `companion_consts: Vec<NodeId>`（+ children 收集）。
+  2. **parser.rs parse_enum**: companion object 内逐成员——非 private 的 `[const] val`（标量）经 parse_var_decl 捕获入 companion_consts；private/var 解析后丢弃；**fun/object/class/enum 只跳签名后平衡跳 body**（不 parse body）。关键：companion helper 体内含 `when (val c: Char = r.consume())` 带类型 when 主体（TokeniserState:1669），译器尚不支持，若 parse_fun 其体会整文件 PARSE ERROR → 故只跳不解析。
+  3. **render.rs**: (a) render_lifted_enum_consts/render_lifted_enum_const 把**标量**常量（Rune/Int/String/Bool/Float… 白名单；数组/CharArray 不提升，无外部引用错误、语义面复杂）渲染为顶层 `let EnumName__const`（lifted_enum_const_name 双下划线前缀防撞名），拼接到 enum 文本尾；(b) enum_companion_const_lifted 查 enum_index，render_member 在 `EnumName.const` 处重写为提升名——**仅当该常量确实提升成功**（scalar 白名单命中）才重写，否则会指向未 emit 的名字造新 undeclared。
+- **层级**: L3（3 文件：node 模型 + parser 捕获 + render 提升/重写）。
+- **测试**: 266_enum_companion_const（条目体 + companion public 标量 const MARKER + private const secret + 带 typed-when 体的 helper classify）——断言外部 `Signal.MARKER`→42 可达、useMarker()→43、helper 体不致翻译中止、private const 不提升。翻译→cjc→运行 exact-match 4 行全绿。
+- **测量**:
+  - **1g（主战果）**: 1072 → **1066（-6）**。`nullChar is not a member` **7→0**，TokeniserState 从 enum-member 簇整体消失（残 read×1=方法分派，R18）。**诚实新表面**: 4 处 `append.replace(TokeniserState.nullChar, ...)` 原被「nullChar 不是成员」遮蔽，nullChar 解析后**露出真错** `String.replace 期望 Class-Regex 得 Rune`（.replace 误映射到 Regex-based 重载，独立簇）——故 replace 簇净 -3（-7 член + 4 揭示），另 3 处 character_reader `c != nullChar` 干净解决 → 合计 -6。
+  - **2a（外溢，仅记录）**: 964 → **963（-1）**。parser enum 改动对 datetime 中性无回归。
+- **回归**: 单文件 257→**258/258** + 项目 **36/36** 全绿三阶段（含新 266）。
+- **R18 候选（基于 post 聚类）**:
+  1. **FilterResult 嵌套 enum-in-interface 未提升**（×16 = undeclared id×12 + type×4）——render 从 interface 提升嵌套 enum 缺失（class 路径有提升，interface 缺），与簇 A 同族「结构截断」，render 侧 L2。
+  2. **簇 A 真方法分派**（read dispatch）——机制探针已验证，但需先修 tokeniser 语义层（token/character_reader/tokeniser 118+ 错误行），高风险，宜在语义层收敛后再打。
+  3. **String.replace(Rune/String literal → Regex) 误映射**（本轮揭示 ×4+）——.replace 应按参数类型分派到 char/string 替换而非 Regex。
+  4. mismatched types×243（长尾语义层）。

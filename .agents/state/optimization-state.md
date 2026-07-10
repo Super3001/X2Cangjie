@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R16: **1072**（auto 16 轮起点 1411, -24%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A enum-entry-body 截断阶段①(-12, 68/24 条目全保留, 修 HtmlTreeBuilderState companion 泄漏); 下一战役候选(R17): 簇A阶段②(enum 成员 func+match(this) 分派, 探针已证可行)/FilterResult 嵌套enum-in-interface未提升(×16)/flow-sensitive smart-cast/父类型位成员合成 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R17: **1066**（auto 17 轮起点 1411, -24%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A阶段① enum-entry-body 截断(-12) + R17 簇A阶段② companion 标量常量提升(-6, TokeniserState.nullChar×7 член→提升顶层 EnumName__const, 揭示被遮蔽的 String.replace(Rune)Regex 误映射×4); 下一战役候选(R18): FilterResult 嵌套enum-in-interface未提升(×16, render提升侧)/簇A真方法分派(read, 需先修 tokeniser 语义层, 高风险)/String.replace(Rune→Regex)误映射/mismatched×243 | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,16 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g 簇 A 阶段② (2026-07-10) — companion 标量常量提升顶层（auto R2/20, 战役轮 R17）
+
+- **决策转向（证据驱动, 与协调者预设风险模型相反, 已记录理由）**: 协调者预设「方法分派安全 / companion 有风险」。**实测反转**: (1) 仓颉 enum **不支持 static 成员**（探针 `unexpected variable declaration in enum body`）→ companion 必须提升顶层, 是全新 render 路径; (2) 渲染 68 个 `read` 条目体会**掀开 tokeniser 语义层**——被调方法所在 token.cj(62)/character_reader.cj(34)/tokeniser.cj(22) 已有 118+ 错误行, 真方法分派极可能净负。故本轮落**安全净正切片**=companion 标量常量提升, 真方法分派留 R18。
+- **真根因**: `TokeniserState.nullChar`（companion `public const val`）被 7 处外部文件引用（CharacterReader/Token）。仓颉 enum 无处挂 static → 全报 "nullChar is not a member of enum"。
+- **修复（parser.rs + render.rs, L3）**: (1) parser 捕获 enum companion 内**非 private 标量 `[const] val`** 存入新字段 `Kind::Enum.companion_consts`（复用 parse_var_decl）; companion **函数体不解析**（改跳签名+平衡跳 body）——否则 helper 体内 `when (val c: Char = ...)` 带类型 when 主体（TokeniserState:1669, 译器尚不支持）会整文件报错。(2) render 把标量常量提升为同文件顶层 `let EnumName__const`（双下划线防撞名, 非标量/数组不提升控风险）; (3) render_member 把外部 `EnumName.const` 重写为 `EnumName__const`（提升侧/引用侧同命名规则; 仅重写确实提升成功者）。
+- **测量**: 1g 1072→**1066（-6）**。nullChar "not a member" 7→0; TokeniserState 从 enum-member 簇整体消失（残 read×1=方法分派, R18）。**4 处 `.replace(nullChar,...)` 由「nullChar 不是成员」转为**被遮蔽的真错**`String.replace 期望 Regex 得 Rune`——诚实新表面（-7 член + 4 揭示 = 净 -3 于 replace 簇, 另 3 处 character_reader `c != nullChar` 干净解决）。2a 964→**963**（parser 改动中性/-1）。
+- **测试**: 266_enum_companion_const（条目体 + companion public 标量 const + private const + 带 typed-when 体的 helper func; 断言外部 `Signal.MARKER`→42 可达 + helper 体不致翻译中止）。回归 **258/258 单文件 + 36/36 项目全绿**。
+- **R18 候选**: ① FilterResult 嵌套 enum-in-interface 未提升(×16, render 从 interface 提升缺失, 与簇A同族结构截断) ② 簇A真方法分派(read, 需先修 tokeniser 语义层, 高风险, 探针已证 match(this) 机制可行) ③ String.replace(Rune→Regex) 误映射 ④ mismatched×243。
+- **auto R2/20**。
 
 ### 1g 簇 A (2026-07-10) — enum-entry-body 截断阶段①, 68 条目全保留（auto R1/20, 战役轮 R16）
 

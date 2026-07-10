@@ -1062,6 +1062,10 @@ impl Parser {
         }
         // 解析枚举体的成员函数部分（`;` 之后）
         let mut enum_members = Vec::new();
+        // R17 簇A阶段②: companion object 内的 public 标量常量提升为顶层 let。
+        // 仓颉 enum 无 static 成员, 外部 `EnumName.const`（如 TokeniserState.nullChar×7）
+        // 无处落脚 → 捕获后由 render 提升 + 重写引用。
+        let mut companion_consts = Vec::new();
         if self.eat_sym(";") {
             self.skip_seps();
             while !self.is_sym("}") && !self.at_eof() {
@@ -1074,25 +1078,61 @@ impl Parser {
                         enum_members.push(self.parse_fun(&mmods)?);
                     }
                 } else if self.is_kw("companion") {
-                    // enum 内 companion object：整块按括号平衡跳过。逐 token bump 会让
-                    // companion 的 `}` 提前终结成员循环，把 enum 自身的 `}` 泄漏到外层。
-                    // （成员本就未存入 Kind::Enum；companion 函数如 byName 的静态化是
-                    // 后续语义轮次的工作。）
+                    // enum 内 companion object：捕获 public 标量常量（提升顶层）,
+                    // 其余成员（private 常量 / 函数 / 嵌套）整块平衡跳过。
                     self.bump(); // companion
                     self.eat_kw("object");
                     if matches!(self.peek(), Tok::Ident(_)) {
                         self.bump(); // 可选的 companion 名
                     }
                     if self.eat_sym("{") {
-                        let mut cdepth = 1;
-                        while cdepth > 0 && !self.at_eof() {
-                            if self.is_sym("{") {
-                                cdepth += 1;
-                            } else if self.is_sym("}") {
-                                cdepth -= 1;
+                        self.skip_seps();
+                        while !self.is_sym("}") && !self.at_eof() {
+                            let cmods = self.skip_modifiers();
+                            let is_private = cmods.iter().any(|m| m == "private");
+                            // 复用既有构造解析器完整消费每个成员（正确处理 body/init/嵌套），
+                            // 仅保留非 private 的 `[const] val` 标量常量提升顶层, 其余丢弃。
+                            if self.is_kw("const") || self.is_kw("val") || self.is_kw("var") {
+                                // 标量常量：parse_var_decl 完整消费声明（含 init 表达式）。
+                                // 非 private 的 `[const] val` 才捕获提升; private/var 解析后丢弃。
+                                let mutable = self.is_kw("var");
+                                self.eat_kw("const");
+                                let v = self.parse_var_decl()?;
+                                if !mutable && !is_private {
+                                    companion_consts.push(v);
+                                }
+                            } else if self.is_kw("fun")
+                                || self.is_kw("object")
+                                || self.is_kw("class")
+                                || self.is_kw("interface")
+                                || self.is_kw("enum")
+                            {
+                                // companion 私有 helper / 嵌套类型：R18（需与条目体一并渲染）。
+                                // 本轮**不解析其体**——体内可能含译器尚不支持的构造（如
+                                // `when (val c: Char = ...)` 带类型的 when 主体, TokeniserState:1669），
+                                // parse_fun 会整文件报错。改为跳过签名后平衡跳过 body。
+                                self.bump(); // fun/object/class/...
+                                loop {
+                                    if self.at_eof() || self.is_sym("}") {
+                                        break;
+                                    }
+                                    if self.is_sym("(") {
+                                        self.skip_balanced_parens();
+                                    } else if self.is_sym("{") {
+                                        let _ = self.skip_balanced_braces();
+                                        break;
+                                    } else {
+                                        self.bump();
+                                    }
+                                }
+                            } else if self.is_sym("{") {
+                                let _ = self.skip_balanced_braces();
+                            } else {
+                                self.bump();
                             }
-                            self.bump();
+                            self.skip_seps();
                         }
+                        self.expect_sym("}")?;
                     }
                 } else if self.is_sym("{") {
                     // 其他成员的块体（如嵌套 `object Constants { ... }` 的体）：
@@ -1126,6 +1166,7 @@ impl Parser {
             name: safe_name(&name),
             entries,
             params,
+            companion_consts,
         }))
     }
 

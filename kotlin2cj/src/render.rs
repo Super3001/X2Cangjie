@@ -553,7 +553,8 @@ impl Engine {
                 name,
                 entries,
                 params,
-            } => self.render_enum(&name, &entries, &params),
+                companion_consts,
+            } => self.render_enum(&name, &entries, &params, &companion_consts),
             Kind::TypeAlias { name, target_type } => {
                 // 仓颉 `type X = Y` 语法 (1f R6: 之前注释化导致类型引用 undeclared)
                 // 泛型 typealias (name 含 `<`) 仓颉可能不支持,仍注释化避免 V 未声明
@@ -814,6 +815,10 @@ impl Engine {
         if let Kind::NameRef { original, .. } = self.g.kind(base) {
             if let Some(mapped) = self.render_type_constant(original, name) {
                 return Some(mapped);
+            }
+            // R17 簇A阶段②: `EnumName.const`（仓颉 enum 无 static）→ 提升后的顶层名。
+            if let Some(lifted) = self.enum_companion_const_lifted(original, name) {
+                return Some(lifted);
             }
             if let Some(alias) = self.companion_static_alias(original, name) {
                 return Some(format!("{}.{}", original, alias));
@@ -2550,9 +2555,14 @@ impl Engine {
         name: &str,
         entries: &[EnumEntry],
         params: &[CtorParam],
+        companion_consts: &[NodeId],
     ) -> Option<String> {
+        // R17 簇A阶段②: companion public 标量常量提升为同文件顶层 let（仓颉 enum 无 static）。
+        // 外部 `EnumName.const` 引用由 render_member 重写为提升名 `EnumName__const`。
+        let lifted = self.render_lifted_enum_consts(name, companion_consts);
+
         if entries.is_empty() {
-            return Some(format!("enum {} {{ | {} }}", name, name));
+            return Some(format!("enum {} {{ | {} }}{}", name, name, lifted));
         }
 
         // 无构造器参数的简单枚举
@@ -2570,8 +2580,8 @@ impl Engine {
                 ));
             }
             return Some(format!(
-                "@Derive[Hashable, Equatable]\nenum {} <: ToString {{\n{}| {}\n{}public func toString(): String {{\n{}return match (this) {{\n{}{}}}\n{}}}\n}}",
-                name, IND, body, IND, IND, IND, arms, IND
+                "@Derive[Hashable, Equatable]\nenum {} <: ToString {{\n{}| {}\n{}public func toString(): String {{\n{}return match (this) {{\n{}{}}}\n{}}}\n}}{}",
+                name, IND, body, IND, IND, IND, arms, IND, lifted
             ));
         }
 
@@ -2645,7 +2655,82 @@ impl Engine {
         out.push_str(&format!("{}{}return !(this == rhs)\n", IND, IND));
         out.push_str(&format!("{}}}\n", IND));
         out.push_str("}");
+        out.push_str(&lifted);
         Some(out)
+    }
+
+    /// 渲染 enum companion public 标量常量为同文件顶层 `let`（提升名 `EnumName__const`）。
+    /// 单个常量渲染失败则跳过该常量（不拖垮整个 enum）。返回可直接拼接到 enum 文本尾部
+    /// 的串（前置双换行；无可提升项时为空串）。
+    fn render_lifted_enum_consts(&self, enum_name: &str, consts: &[NodeId]) -> String {
+        let mut parts = Vec::new();
+        for &cid in consts {
+            if let Some(s) = self.render_lifted_enum_const(enum_name, cid) {
+                parts.push(s);
+            }
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{}", parts.join("\n"))
+        }
+    }
+
+    fn render_lifted_enum_const(&self, enum_name: &str, cid: NodeId) -> Option<String> {
+        let Kind::VarDecl {
+            name_node,
+            ty,
+            init,
+            ..
+        } = self.g.kind(cid)
+        else {
+            return None;
+        };
+        let raw_name = self.t(*name_node)?;
+        // 仅提升**标量**常量（Rune/Int/String/Bool/Float 等）。数组/集合类型
+        // （CharArray→Array<Rune> 等）语义面复杂且当前无外部引用错误, 不提升以控风险。
+        let scalar_tys = [
+            "Rune", "Int64", "Int32", "Int16", "Int8", "UInt8", "UInt16", "UInt32", "UInt64",
+            "String", "Bool", "Float64", "Float32", "Byte", "Char",
+        ];
+        let ty = ty.as_ref()?;
+        if !scalar_tys.contains(&ty.as_str()) {
+            return None;
+        }
+        let lifted_name = lifted_enum_const_name(enum_name, &raw_name);
+        let init = (*init)?;
+        let init_s = self.t(init)?;
+        let surrogate = self.is_surrogate_char_lit(init);
+        let eff_ty = if surrogate && ty == "Rune" {
+            "Int64".to_string()
+        } else {
+            ty.clone()
+        };
+        Some(format!("let {}: {} = {}", lifted_name, eff_ty, init_s))
+    }
+
+    /// enum companion const 提升名。若 `EnumName.member` 命名一个已捕获的 companion
+    /// public 常量, 返回提升后的顶层名 `EnumName__member`, 否则 None。
+    fn enum_companion_const_lifted(&self, enum_name: &str, member: &str) -> Option<String> {
+        let &eid = self.enum_index.get(enum_name)?;
+        let Kind::Enum {
+            companion_consts, ..
+        } = &self.g.nodes[eid].kind
+        else {
+            return None;
+        };
+        for &cid in companion_consts {
+            if let Kind::VarDecl { name_node, .. } = self.g.kind(cid) {
+                if self.t(*name_node).as_deref() == Some(member)
+                    // 仅当该常量确实被提升（render_lifted_enum_const 成功）时才重写引用，
+                    // 否则会重写到一个未 emit 的名字, 制造新的 undeclared。
+                    && self.render_lifted_enum_const(enum_name, cid).is_some()
+                {
+                    return Some(lifted_enum_const_name(enum_name, member));
+                }
+            }
+        }
+        None
     }
 
     // ============ 块渲染 ============
@@ -3403,6 +3488,12 @@ pub(crate) fn indent(s: &str, n: usize) -> String {
 }
 
 /// 从声明字符串中精确剥离修饰符关键字（仅匹配行首的修饰符序列，避免误伤标识符）。
+/// enum companion 常量提升到顶层后的名字。双下划线前缀避免与其它顶层符号撞名，
+/// 且提升侧（render_enum）与引用侧（render_member）用同一命名规则保持一致。
+fn lifted_enum_const_name(enum_name: &str, member: &str) -> String {
+    format!("{}__{}", enum_name, member)
+}
+
 fn strip_modifier(s: &str, modifier: &str) -> String {
     let prefix = format!("{} ", modifier);
     // 仅处理第一行（声明签名行），保护函数体内容
