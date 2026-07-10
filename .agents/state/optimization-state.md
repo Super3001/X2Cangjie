@@ -42,7 +42,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
 | 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R17: **1066**（auto 17 轮起点 1411, -24%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A阶段① enum-entry-body 截断(-12) + R17 簇A阶段② companion 标量常量提升(-6, TokeniserState.nullChar×7 член→提升顶层 EnumName__const, 揭示被遮蔽的 String.replace(Rune)Regex 误映射×4); 下一战役候选(R18): FilterResult 嵌套enum-in-interface未提升(×16, render提升侧)/簇A真方法分派(read, 需先修 tokeniser 语义层, 高风险)/String.replace(Rune→Regex)误映射/mismatched×243 | C:/Codes/kotlin/ksoup |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R18: **1051**（auto 18 轮起点 1411, -26%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15, render_interface 只遍历Func静默丢弃嵌套enum→提升顶层, 引用侧已展平无需重限定; 只打enum, nested-class-in-interface缓R19避2a+138); 下一战役候选(R19): mismatched×244/undeclared id×124/is-not-member-of-class×113(Node/StringBuilder/EscapeMode)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -99,6 +99,16 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1g 簇 A (2026-07-10) — FilterResult 嵌套 enum-in-interface 提升顶层（auto R3/20, 战役轮 R18, 本代 fixer 收官）
+
+- **证实根因**: `render_interface`（render.rs）只遍历 `Kind::Func` 成员发射方法签名, **静默丢弃嵌套 `Kind::Enum`/`Kind::Class`**——仓颉 interface 体只容方法签名, 不容嵌套类型。故 `NodeFilter.FilterResult`（5 项 enum）既不在 interface 也无顶层输出 → 引用处 undeclared id×12 + type×4。对照: `render_regular_class`（1838 一带）已提升嵌套 Class/Enum, interface 路径缺此逻辑。
+- **修复（render.rs render_interface, L1 单函数）**: 成员遍历遇 `Kind::Enum` → `self.t(*m)` 渲染后收集, 拼接到 interface 文本尾（顶层 `enum FilterResult`）。**引用侧零改动**: `FilterResult.CONTINUE`/`FilterResult`(type) 已是裸形（限定符 `NodeFilter.FilterResult` 早由 render_member 展平, 对照 267 测试 `Walker.Decision.GO`→`Decision.GO` 亦通）, 提升即解析全部引用。
+- **范围裁决（证据驱动, 收缩避 2a 回归）**: 初版同时提升嵌套 **class** → 2a datetime `Directive` 抽象类层级（带 formatLength/formatLetter 字段+继承）被掀开, +138（missing-abstract×79 + shadow-member×72 簇）。**收缩为 enum-only**（正合任务「本轮只打 enum-in-interface」范围）: 2a 回落 964 中性, 1g 反而更优 -15。nested-class-in-interface 记 R19。
+- **测量**: 1g 1066→**1051（-15）**。FilterResult undeclared id×12→0 + type×4→0（16 全清）; 残 2 处 node_traversor 提及 FilterResult 实为被遮蔽的 filter.head 可空性错（诚实surface）。2a 963→**964**（enum-only 中性, 噪声带内）。
+- **测试**: 267_enum_in_interface（interface 内 enum + 方法返回该 enum + implementer override + 外部裸/限定引用 `Decision.GO`+`Walker.Decision.GO` + match; 断言运行 go/skip/halt/true）。回归 **259/259 单文件 + 36/36 项目全绿**。
+- **R19 候选**: mismatched×244 / undeclared id×124(code/_parser/append) / is-not-member-of-class×113(ArrayList<Node>×15/Node×14/StringBuilder×14/EscapeMode×9) / no-matching-operator()×38 / 簇A真方法分派(read,高风险) / **nested-class-in-interface**(本轮缓, 2a Directive 掀 +138 前需先修 datetime 抽象类层级) / String.replace(Rune→Regex).
+- **auto R3/20**。**本代 fixer context 200k+ 收官退役, 换代交接见 fix-history 尾部「交接」**。
 
 ### 1g 簇 A 阶段② (2026-07-10) — companion 标量常量提升顶层（auto R2/20, 战役轮 R17）
 

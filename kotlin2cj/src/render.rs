@@ -1521,6 +1521,12 @@ impl Engine {
         interfaces: &[String],
     ) -> Option<String> {
         let mut ibody = String::new();
+        // R18 簇A: interface 内嵌套 Class/Enum（如 NodeFilter.FilterResult）须提升到顶层
+        // ——仓颉 interface 体只容方法签名, 不容嵌套类型声明。此前 render_interface 只遍历
+        // Kind::Func、静默丢弃嵌套 enum → FilterResult 既不在 interface 也无顶层输出
+        // （undeclared id×12 + type×4）。引用侧已是裸 `FilterResult.X`（限定符已在
+        // render_member 展平）, 故提升为顶层 `enum FilterResult` 即解析全部引用, 无需重限定。
+        let mut lifted = Vec::new();
         for m in members {
             if let Kind::Func {
                 name: fname,
@@ -1547,6 +1553,13 @@ impl Engine {
                     .map(|r| format!(": {}", r))
                     .unwrap_or_else(|| ": Unit".to_string());
                 ibody.push_str(&format!("{}func {}({}){}\n", IND, fname, ps.join(", "), r));
+            } else if matches!(self.g.kind(*m), Kind::Enum { .. }) {
+                // 本轮只打 enum-in-interface（任务范围）。嵌套 **class** 提升暂缓:
+                // 2a datetime 的 interface 内嵌套抽象类（Directive, 带 formatLength/
+                // formatLetter 字段 + 继承）翻译质量差, 提升会掀开 +138 隐藏错误
+                // （missing-abstract / shadow-member 簇）。nested-class-in-interface
+                // 记为 R19 候选, 不在本轮扩权。
+                lifted.push(self.t(*m)?);
             }
         }
         let sup = if interfaces.is_empty() {
@@ -1554,10 +1567,15 @@ impl Engine {
         } else {
             format!(" <: {}", interfaces.join(" & "))
         };
-        if ibody.is_empty() {
-            Some(format!("interface {}{} {{}}", name_gen, sup))
+        let iface = if ibody.is_empty() {
+            format!("interface {}{} {{}}", name_gen, sup)
         } else {
-            Some(format!("interface {}{} {{\n{}}}", name_gen, sup, ibody))
+            format!("interface {}{} {{\n{}}}", name_gen, sup, ibody)
+        };
+        if lifted.is_empty() {
+            Some(iface)
+        } else {
+            Some(format!("{}\n\n{}", iface, lifted.join("\n\n")))
         }
     }
 

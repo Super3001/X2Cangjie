@@ -730,3 +730,34 @@
   2. **簇 A 真方法分派**（read dispatch）——机制探针已验证，但需先修 tokeniser 语义层（token/character_reader/tokeniser 118+ 错误行），高风险，宜在语义层收敛后再打。
   3. **String.replace(Rune/String literal → Regex) 误映射**（本轮揭示 ×4+）——.replace 应按参数类型分派到 char/string 替换而非 Regex。
   4. mismatched types×243（长尾语义层）。
+
+### 2026-07-10 — RENDER — auto R3/20 簇 A：FilterResult 嵌套 enum-in-interface 提升顶层（本代 fixer 收官）
+
+- **战役**: auto R3/20（1g 战役轮 R18），簇 A 收尾——interface 内嵌套 enum。基线 output/target_1g_r17 = 1066。
+- **证实根因**: `render_interface`（render.rs:1516 一带）只遍历 `Kind::Func` 成员发射方法签名，**静默丢弃嵌套 `Kind::Enum`/`Kind::Class`**——仓颉 interface 体只容方法签名，不容嵌套类型声明。故 `NodeFilter.FilterResult`（5 项 enum：CONTINUE/SKIP_CHILDREN/SKIP_ENTIRELY/REMOVE/STOP）解析进 NodeFilter.members 后渲染阶段被扔掉，既不在 interface 也无顶层输出 → NodeTraversor 等引用处 undeclared identifier×12 + undeclared type×4。对照 `render_regular_class`（render.rs:1838 一带 `matches!(kind, Class|Enum) => lifted.push`）早已提升类内嵌套 Class/Enum，interface 路径独缺此逻辑。
+- **修复（render.rs render_interface，L1 单函数）**: 成员遍历分支新增 `else if matches!(kind, Kind::Enum) => lifted.push(self.t(m))`，把嵌套 enum 渲染后拼接到 interface 文本尾（顶层 `enum FilterResult`）。**引用侧零改动**: 引用早已是裸 `FilterResult.CONTINUE` / `FilterResult`(type)——限定符 `NodeFilter.FilterResult` 由 render_member 的既有「class 名.嵌套类型 → 裸名」展平逻辑处理（267 测试验证 `Walker.Decision.GO`→`Decision.GO`、`d: Walker.Decision`→`d: Decision` 亦通），故提升到顶层同名 enum 即解析全部引用，无需重限定改写（本轮无需动用 R9 成员 import 重限定 / 2a Directive 嵌套引用那套机制——引用侧本就正确）。
+- **范围裁决（证据驱动，收缩避 2a 回归，已记录理由）**: 初版 `matches!(kind, Class|Enum)` 同时提升嵌套 **class**。实测 2a datetime 的 interface 内嵌套抽象类 `Directive`（带 formatLength/formatLetter 字段 + 继承层级）被掀开 → 2a 963→1101（**+138**：missing-abstract×79 + must-not-shadow-member×72 两簇，均为 Directive 层级翻译质量问题）。**收缩为 enum-only**（`matches!(kind, Kind::Enum)`）——正合协调者「本轮只打 enum-in-interface」范围: 2a 回落 964（中性），1g 反而更优（-13→-15，class-only 版少提升的一个类本身带 2 错）。nested-class-in-interface 记 R19 候选（需先修 datetime 抽象类层级再提升）。
+- **层级**: L1（render.rs 单函数单分支 + 收尾拼接）。
+- **测试**: 267_enum_in_interface（interface `Walker` 内 `enum class Decision` + 方法 `step(): Decision` 返回该 enum + `class Counter: Walker` override + 外部 `describe(d: Walker.Decision)` when-match + main 裸 `Decision.GO` 与限定 `Walker.Decision.GO` 混用）——翻译→cjc→运行 exact-match 4 行全绿（go/skip/halt/true）。
+- **测量**:
+  - **1g（主战果）**: 1066 → **1051（-15）**。FilterResult undeclared identifier×12→0 + undeclared type×4→0（16 全清）。残 2 处 node_traversor 提及 FilterResult 的行实为被遮蔽的 `filter.head(...)` 返回 `Option<Node>` 可空性错（诚实新表面，非 FilterResult 本身）。
+  - **2a（外溢，仅记录）**: 963 → **964（+1）**。enum-only 后中性（噪声带内）。若误用 class-in-interface 提升则 +138（已收缩规避）。
+- **回归**: 单文件 258→**259/259** + 项目 **36/36** 全绿三阶段（含新 267）。
+
+- **顺带确认（只记录不扩权）**: object/singleton（render_singleton, render.rs:1569 一带）已有 lifted 机制提升嵌套；companion 内嵌套类走 class 成员环提升。interface 是唯一缺口，本轮补上（限 enum）。未深查 singleton 是否漏嵌套 enum（低优先，无当前错误信号）。
+
+---
+
+#### 交接（本代 fixer context 200k+ 收官退役 → 下任 fixer 需要知道的活上下文）
+
+- **簇 A 三轮全景**: R16 阶段①（parser 修 enum-entry-body 截断, 68/24 条目全保留, -12）→ R17 阶段②（companion 标量常量提升顶层 EnumName__const, -6）→ R18（FilterResult 嵌套 enum-in-interface 提升, -15）。簇 A 结构截断族基本收敛。
+- **未尽事项（簇 A 剩余）**:
+  1. **簇 A 真方法分派（read/process 抽象方法体）尚未做**——这是阶段②的「完整体」。探针已证机制可行（enum 成员 func + `match(this)` 分派 + bare 构造子引用 + 顶层 func/let 调用），探针在 `output/probe/enum_static/probe.cj` 与 `output/probe/enum_member_probe/probe.cj`。**坑**: 渲染 68 个 read 条目体会掀开 tokeniser 语义层（token.cj/character_reader.cj/tokeniser.cj 有 118+ 错误行），且条目体重度引用 companion 私有 helper（readCharRef 等，本轮未提升）+ 私有常量（eof/replacementChar，本轮只提升 public）。**必须先让 tokeniser 语义层收敛再打**，否则净负。companion 私有 helper 提升还卡在译器不支持 `when (val c: Char = ...)` 带类型 when 主体（TokeniserState:1669）——这是个独立 parser 缺口，值得先补。
+  2. **nested-class-in-interface**（本轮缓）: 2a Directive 抽象类层级掀 +138，需先修 datetime 抽象类翻译（missing-abstract + shadow-member 两簇）再放开 class 提升。
+- **坑位清单**:
+  - `Kind::Enum` 现有 4 字段（name/entries/params/companion_consts）——加字段需同步 node.rs children 收集、parser 构造、render.rs:552 解构、以及 `{..}` 模式外的所有 exhaustive 匹配。
+  - 编译日志必须 Git Bash 重定向（PowerShell Out-File 损坏 e/E 成 ESC）。cjpm 在 PATH（`/c/toolchain/Cangjie1.0.5/tools/bin`，`cjc` 在 `bin`），env 已就绪, 直接 `cjpm build`。
+  - fix-history 追加勿用含控制字符的 heredoc（' ' 等字面量会被 Bash 工具拒）——写 scratchpad 文件再 `cat >>`。
+  - 2a 是 ⏸ 暂停目标, 不进回归门禁; 但 render 改动可能外溢 2a（如本轮 +138 教训）——**render 侧改动务必重译 2a 核对**, 别只测 1g。
+- **探针/产物位置**: 探针 `output/probe/{enum_static,enum_member_probe}/`; 本轮产物 `output/target_1g_r18`(1051)/`output/target_2a_r18`(964); 聚类工具 `output/diagnose_clusters.py <log> --top N`。
+- **R19 首推**: is-not-member-of-class×113（Node×14/StringBuilder×14/EscapeMode×9/OutputSettings×8——集中在 DOM 核心类的成员缺失, 疑 stub/API 映射, 单簇高密度）或 mismatched×244（最大但最杂）。
