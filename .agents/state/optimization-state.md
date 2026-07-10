@@ -81,6 +81,33 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 
 ## 战略校准记录
 
+### 2026-07-10 — auto R5/20 定期校准 + 防刷冷启动审计（新 --auto 20 战役, 1g 战役轮 R20）
+
+- **冷启动审计裁决: MIXED**（独立 general subagent 只读 state 战报, 无代码/无当轮上下文）:
+  - **on-track 证据**: R16-R19 修复均为真实机制非 stub（enum-entry-body 截断 / companion-const 提升 / FilterResult enum-in-interface 提升 / type_qualifier_class 递归折叠）; 诚实文化（旧 R5 口径修正"1598→10 作废" / R6 18× 误差重估 / R9 证伪 / R18 +138 2a 溢出收缩 / R14 stub 6/6 查证零假退役）; Option/Equatable 战役 R13 `263_equals_dispatch` 14 运行断言闭环语义（残 3/8 tag/nodes/identity_hash_map 显式追踪为 flow-sensitive smart-cast 深层候选, 未埋）.
+  - **gaming 证据（核心, 必须正面回应）**: **新旧 R5 强制项 (a) "2a 收官后必须回 1g 正面攻 mismatched/Option ~229+ 硬簇——该簇自 2026-07-06 挂候选至今从未被正面攻击"——新战役 R16-R19 四轮每轮把 mismatched×245 重列为候选, 实际却打 not-member 子簇（enum-entry-body / companion-const / FilterResult / nested-type-qualifier + appendCodePoint）. 四轮零正面, 正是旧 R5 警告的"逼近目标 vs 养指标"分水岭, 现已四轮深**.
+  - **gaming 证据（次）**: 旧 R5 强制项 (b) "给至少一个 ✅ 目标跑 x2cj-eval 或运行时验证"——仅 1e 合规（运行时 ✓）, **1a/1b 仍空 x2cj-eval 列**（仅"0 errors"）. stub 负债净增（R14 6/6 暂封零退役 + 旧 R5 4 marker stub, 仅 REGEX/SEQUENCE 类真 API 映射）.
+- **三张地形图重估（协调者视角）**:
+  - **遮蔽层**: 1g 1355→1044（-311 over R5-R19）, 结构性易簇（enum-entry-body / companion-const / FilterResult / nested-type-qualifier / appendCodePoint / isNullOrEmpty）基本清完; 残 mismatched×245（旧 R5 时 ~229, 现 245——**reveals 增速 > 修复增速, 成顽固核心**）+ not-member×101 + undeclared id×124 + no-matching-op×38 + unable-infer-generic×36. **遮蔽已退到语义硬核**.
+  - **经济曲线**: R10-R13 Option 战役 -108/4 轮（~1240 基数, 8.7%）高产; R15 isNullOrEmpty -59 单点高杠杆; **R16-R19 = -12/-6/-15/-7（-40/4 轮 on ~1084, 3.7%, ~0.9%/轮）——山穷之兆, 结构性易矿将尽, 每错成本劣化（R17 三文件 L3 机制换 -6, R19 双机制 + 回归修换 -7 net）**.
+  - **portfolio**: 1g ⏳1044 主战场（残为 L2-L3 语义硬核 mismatched / read 分派）; 1f 🟡 blocked; 2a ⏸964（Directive 抽象类层级须先修）; ✅ 1a/1b/1c/1e 仅 1e 运行时验证. **无新 parse 富矿可转**（exposed/koin 锁定, 审计禁开新 target）.
+- **裁决与强制项**:
+  1. **(a) R20 = 正面攻 mismatched×245**（兑现新旧 R5 强制项 a）. L3 高风险（Option/unwrap 类型推断 + 泛型推断）→ 按 L3 自动处理: 先 sub-bucket 诊断（== / != / Int64 宽度 / `() -> T` 未调 / Option<T> unwrap / smart-cast）, 找 L2-able 子桶降级攻, 取单轮净正切片; 真全 L3 则本轮至少产出 sub-bucket 分桶 + 定格前置分析（n=1 不得定格, ≥2 次独立确认才可标已知限制）.
+  2. **(b) 1a/1b ✅ 回填运行时 / x2cj-eval 验证**——排入新战役 auto R6-R7, 与 mismatched 正面攻击并行不冲突（不同 target）; 1e 运行时验证模式可复用（副本重译→build→行为断言）.
+  3. **(c) stub 负债剪枝**（退役 stub 换真 API 映射）排入 auto R8 候选（R14 6/6 暂封项仍待仓颉 std 补面; 父类型位 marker 退役 = 深层特性候选, 与旧 R6 值位委托同源）.
+- **轮标**: R20 = auto R5/20 = 1g 战役轮 R20（校准轮, 与簇攻击同轮执行; 校准先于簇攻击, 因 mismatched 分桶结果决定方向）.
+
+- **R20 mismatched 分桶结果（正面-攻击已执行, 强制项 a 兑现）**: 245 错按 (expected :: found) 配对分桶:
+  - **A under-unwrap `T` vs `Option<T>` (~66, 最大桶)** = R11 确认的 L3 残留（非 NameRef receiver / 跨类字段歧义, 需 receiver 静态类 + 继承链; R11 已 79→40, 残 40 为 D-cast/D-index/D-assign/D-double/C-ambig 五桶）.
+  - **C `String` vs `Array<String>` (×16)** 疑 split/toString 映射缺口（待探, 可能 L2）.
+  - **D `Node` vs `Int64` (×11)** = 索引/计数推断 L3.
+  - **G `T` vs `() -> T` (×12)** = R17 缓打的非标量 companion-const 提升（`Range.AttributeRange.UntrackedAttr` = `AttributeRange(Untracked, Untracked)` 构造调用 init, 非标量故 R17 scalar 白名单排除, 语义面复杂含 init 依赖链, L2-L3）.
+  - **B `Option<T>` vs `Option<Option<T>>` (×9)** 双包装（待探, 疑一致 render bug）.
+  - **E `Bool` vs `Unit` (×7)** removeIf 族（待探, 疑 L2）.
+  - **F `Option<Object>` vs `Option<String>` (×7)** = 泛型 variance L3. **I `Element` vs `This` (×4)** = smart-cast `this` L3.
+  - **结论: mismatched 真 L3 硬核, 无干净 L3→L2 降级楔子**——最大桶 A 是 R11 既定 L3 残留, G 是 R17 既缓非标量 companion-const, 余皆长尾 L3. **n=1 不得定格**, 需第 2 次独立确认才可标"已知限制". R20 取净正切片失败（无 L2 楔子）→ 本轮 mismatched 正面-攻击产出 = 分桶 + L3 定格前置分析（skill L3 自动处理程序合规, 非零进展: 把"mismatched 候选未打"转为"mismatched 已分桶、L3 已 1 次确认"）.
+  - **后续候选**: 探 C/B/E 小桶（若干净 L2 则取切片）/ 兑现强制项 (b) 1a/1b 运行时验证 / mismatched 第 2 次确认后定格 / 转 not-member×101 残余（ArrayList<Node>×15 疑 stdlib 映射低风险）.
+
 ### 2026-07-10 — auto 第 10 轮定期校准 + 防刷冷启动审计
 
 - **三条强制修正核验**: (a) Option 战役已开打且程序合规（预注册转向条件成立）✓ (b) 1e 运行时验证质量超预期（主动记录 Int 宽度偏差）✓ (c) 轮标基本统一（fix-history R10 条漏 auto 标, 小瑕疵）✓。
