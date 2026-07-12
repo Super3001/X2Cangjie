@@ -41,8 +41,8 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
-| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R9: **746**（新口径; R8"7"系打印截断误计, 真基线 4403） | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename); **R9 泛型扩展函数簇打穿**(裸名接收者的函数泛型归函数自身而非接收者, 4403→746 -83%, 用户手动指定复攻); 管线 translate_1f.py(project 模式)首次固化; R10 候选: 泛型 typealias 丢失(DefinitionOptions×94+Definition×17+OnCloseCallback×4, 带接收者函数类型)/generic-receiver extend 语法(extend<T> X<T>)/missing-argument×103(Invalid 默认参数) | C:/Codes/kotlin/koin |
-| 1g | ksoup-main | ksoup | 87 | ⏳ | R19: **1044**（auto 19 轮起点 1411, -26%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15) + R19 簇 not-member 子簇①② 嵌套类型限定链+appendCodePoint(-7, Syntax×7+OutputSettings×8清+StringBuilder-6=appendCodePoint; ~9 honest reveals; 2a 中性 964无外溢; 验收期修兜底撞车: 移除多级is_class_name兜底避221 StartTag枚举条目/类名撞车); 下一战役候选(R20=auto5校准轮): mismatched×245/undeclared id×124/not-member×101(ArrayList<Node>×15/Node×14/EscapeMode×9)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
+| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R10: **543**（-203 from R9 746, -27%） | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename); **R9 泛型扩展函数簇打穿**(裸名接收者的函数泛型归函数自身而非接收者, 4403→746 -83%, 用户手动指定复攻); 管线 translate_1f.py(project 模式)首次固化; **R10 泛型 typealias 渲染层解注释 + parser `<` 后漏检 ReceiverType<T>.() 修复**(双 bug 互锁, 746→543 -27%, 仓颉 1.0.5 探针矩阵 6 个实证支持 `type X<T>=Y` + `(?T)->Unit` + `(BeanDefinition<T>)->Unit` 三态); 外溢 1g 1044→1033(-11), 2a 963→963(0 中性); R11 候选: missing-argument×107(Invalid 默认参数占位)/expected×163(reified T 类型字面量,高风险)/unimplemented×42(expect class 抽象方法 stub)/generic-receiver extend<T> X<T>(koin~10处) | C:/Codes/kotlin/koin |
+| 1g | ksoup-main | ksoup | 87 | ⏳ | R19: **1044**（auto 19 轮起点 1411, -26%）→ R10 外溢核对 **1033** | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15) + R19 簇 not-member 子簇①② 嵌套类型限定链+appendCodePoint(-7, Syntax×7+OutputSettings×8清+StringBuilder-6=appendCodePoint; ~9 honest reveals; 2a 中性 964无外溢; 验收期修兜底撞车: 移除多级is_class_name兜底避221 StartTag枚举条目/类名撞车); 下一战役候选(R20=auto5校准轮): mismatched×245/undeclared id×124/not-member×101(ArrayList<Node>×15/Node×14/EscapeMode×9)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
 
@@ -126,6 +126,29 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1f 簇 generic-typealias-fn-type (2026-07-12) — 泛型 typealias 渲染层解注释 + ReceiverType<T>.() 解析漏检修复（用户指定继续进攻 1f, 1f 战役轮 R10）
+
+- **双 bug 互锁根因（一句话）**: Kotlin `typealias DefinitionOptions<T> = BeanDefinition<T>.() -> Unit` 在 k2cj 译器有两条独立 bug 互锁——(a) render `Kind::TypeAlias` 的 `name.contains('<')` 门控把所有泛型 typealias 注释化为 `// typealias X<T> = ...`（避免早期 cjc 拒绝），下游 `X<Arg>` 引用全报 undeclared type；(b) parse_type_raw 的 `<` 泛型实参分支后未再检查 receiver-function-type（line 3218 的 receiver 分支只在 expect_ident 后立即触发，泛型实参分支 line 3247 后直接 fall through 到 `?` 检查 + return），导致 `BeanDefinition<T>.() -> Unit` 被截断为 `BeanDefinition<T>`（函数类型部分整体丢失，target_type 错误）。两个 bug 互锁：即使解了 render 注释化，DefinitionOptions 的 target_type 仍是错的。R10 双修解锁。
+- **探针矩阵（6 个 cjc 探针实证, output/probe/）**: 仓颉 1.0.5 完整支持 `type X<T> = Y` + `(?T) -> Unit` + `(BeanDefinition<T>) -> Unit` + 函数类型参数中 `?T` 语法糖。
+  - generic_typealias: `type Callback<T> = (T) -> Unit` ✓
+  - generic_typealias_recv: `type DefScope<T> = (Scope, PHolder) -> T` + `(Option<T>) -> Unit` ✓
+  - qmark_type: `type CallBack<T> = (?T) -> Unit` + `(C, ?T) -> T` ✓
+  - full_typealias_form: 三个 koin 实际形态全证 ✓
+- **修复（render L1 + parser L2 双修）**:
+  - **render.rs (Kind::TypeAlias, -5/+1)**: 移除 `if name.contains('<')` 门控，统一渲染 `type {name} = {target_type}`。
+  - **parser.rs (parse_type_raw, +20 行)**: `<` 泛型实参分支 (`self.eat_sym("<")` line 3247) 后复用 line 3218 同款 receiver-function-type 检查（`.( ` 双 token 触发，ReceiverType 已含 `<T>` 加入 params）。R9 fix-history 已记录该 receiver-function-type 分支位置，本轮补齐 `<` 后的二次检查。
+- **测量**:
+  - **1f**: 746 → **543（-203, -27%）**。undeclared type 177→62 (-115): DefinitionOptions×94 + Definition×17 + OnCloseCallback×4 全清（主要簇）；残 62 为泛型参数 T/S 泄漏（reified `T()` 类型字面量用法，R11+ 候选）。
+  - **新揭示**: unimplemented×42（expect class 抽象方法未实现 stub 缺失，下游显露——之前 typealias 注释化遮蔽了下游使用）、expected×163（reified `T` 类型字面量簇，e.g. `elementAt(0, T)` `getAll(T)` `T` 单独出现被 cjc 拒绝）。
+  - **外溢核对**: 1g 1044 → **1033（-11 正向，ksoup 亦有泛型 typealias 注释化受益）**；2a 963 → **963（0 中性，无外溢）**。
+- **测试**: 271_generic_typealias_fn_type（4 个 typealias 全形态: `Definition<T> = Scope.(P) -> T` / `OnCloseCallback<T> = (?T) -> Unit` / `DefinitionOptions<T> = BeanDefinition<T>.() -> Unit` / `StringList<T> = ArrayList<T>`；含 Definition<T> lambda 2 参数 / OnCloseCallback<T> ?Int64 参数 / DefinitionOptions<T> 显式 b 参数）。回归 **263/263 单文件 + 36/36 项目全绿**。
+- **R11 候选（按杠杆排序）**:
+  - ① missing-argument×107（Invalid 默认参数占位, state R9 候选 ③ 继承, 最大簇, 低风险 L2）
+  - ② expected×163（reified `T()` 类型字面量簇, 高风险, 仓颉无 reified 概念, 可能需 stub 转发或 heuristics 改写）
+  - ③ unimplemented×42（expect class 抽象方法 stub 注入, 与 R9 候选 ④ 静态成员 stub 同源）
+  - ④ generic-receiver `extend<T> KoinDefinition<T>` 语法（koin ~10 处, state R9 候选 ②）
+- **战役轮标**: 1f R10（用户指定继续进攻, 非 auto 轮）。
 
 ### 1f 簇 generic-extension-fn (2026-07-12) — 泛型扩展函数簇打穿, 4403→746（用户手动指定, 1f 战役轮 R9）
 

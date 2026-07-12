@@ -3263,6 +3263,39 @@ impl Parser {
             self.expect_sym(">")?;
             s = format!("{}<{}>", s, args.join(","));
         }
+        // Kotlin 带接收者的函数类型 `ReceiverType<T>.() -> R`：当前已读 ReceiverType
+        // 含泛型实参（line 3247 `<` 分支刚消费完），下一 token 是 `.`，再下一个是 `(`。
+        // 复用上方 line 3218 同款逻辑（不带泛型时该分支已处理；带泛型时需在此再检查一次，
+        // 否则 `BeanDefinition<T>.() -> Unit` 会被截断为 `BeanDefinition<T>`，
+        // typealias target_type 丢失函数类型部分 → 渲染注释化 → 下游引用 undeclared）。
+        if self.is_sym(".")
+            && self.pos + 1 < self.toks.len()
+            && matches!(&self.toks[self.pos + 1].tok, Tok::Sym(s) if s == "(")
+        {
+            self.bump(); // eat '.'
+            self.expect_sym("(")?;
+            let mut params = vec![s.clone()]; // 第一个参数是 ReceiverType（已含 <T>）
+            if !self.is_sym(")") {
+                loop {
+                    let mut ty = self.parse_type_raw()?;
+                    if self.eat_sym(":") {
+                        ty = self.parse_type_raw()?;
+                    }
+                    params.push(ty);
+                    if !self.eat_sym(",") {
+                        break;
+                    }
+                }
+            }
+            self.expect_sym(")")?;
+            self.expect_sym("->")?;
+            let ret = self.parse_type_raw()?;
+            let mut func_s = format!("({}) -> {}", params.join(", "), ret);
+            if self.eat_sym("?") {
+                func_s = format!("{}?", func_s);
+            }
+            return Ok(func_s);
+        }
         // 可空类型 `?` —— 保留为前缀标记，交由 map_type 处理
         if self.eat_sym("?") {
             s = format!("{}?", s);

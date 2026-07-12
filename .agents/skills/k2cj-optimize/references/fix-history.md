@@ -807,4 +807,25 @@
 - **测试**: 270_generic_extension_fn; 回归 262/262 + 36/36 全绿
 - **测量**: 1f 4403→746 (-83%); 外溢 1g 1044→1041 (-3 正向), 2a 964→962 (-2 正向)
 - **方法论**: 未随口径会签重测的旧 target 记录不可信, 复攻前必先新口径重测——1f"剩 7 错已知限制"实为 4403, 其 84% 是单根因; 另: 管线固化 translate_1f.py (project 模式)
+
+### 2026-07-12 — PARSER+RENDER — 1f 泛型 typealias 渲染层注释化 + ReceiverType<T>.() 解析漏检
+- **目标**: 1f koin-core (R10, 用户指定继续进攻 1f)
+- **文件**: `render.rs` — `Kind::TypeAlias` 渲染分支; `parser.rs` — `parse_type_raw` `<` 泛型分支后未再检查 receiver-function-type
+- **修改**:
+  1. **render.rs (TypeAlias, L1 单函数, -5/+1)**: 移除 `if name.contains('<')` 门控。原逻辑把所有泛型 typealias 注释化 (`// typealias X<T> = ...`)，下游 `X<Arg>` 引用全报 undeclared type。探针 `output/probe/generic_typealias` 实测仓颉 1.0.5 支持 `type X<T> = (T) -> Unit` / `type X<T> = (?T) -> Unit` / `type X<T> = (BeanDefinition<T>) -> Unit` 三态, 故统一渲染为 `type {} = {}`。
+  2. **parser.rs (parse_type_raw, L2 +20 行)**: `<` 泛型实参分支 (`self.eat_sym("<")` line 3247) 后未再检查 `ReceiverType.()` 模式 —— `BeanDefinition<T>.() -> Unit` 在 `<T>` 解析后停在 `BeanDefinition<T>`、`.() -> Unit` 残留 token 流。新增 `<` 泛型分支后复用 line 3218 同款 receiver-function-type 检查 (`.(` 双 token 触发, ReceiverType 已含 `<T>` 加入 params)。
+- **根因一句话**: parse_typealias line 674 用 `format!("{}<{}>", name, names.join(", "))` 设 `full_name = "DefinitionOptions<T>"`，render 看 name 含 `<` 即注释化; 而 DefinitionOptions 的 target_type `BeanDefinition<T>.() -> Unit` 因 parser `<` 后漏检 receiver-function-type 被截断为 `BeanDefinition<T>` (函数类型部分整体丢失)。两个 bug 互锁: 即使解了 render 注释化, DefinitionOptions 的 target_type 仍是错的。R10 双修解锁。
+- **探针矩阵**: 6 个 cjc 探针实证 (output/probe/{generic_typealias, generic_typealias_recv, qmark_type, full_typealias_form}): 仓颉 1.0.5 完整支持 `type X<T> = Y` + `(?T) -> Unit` + `(BeanDefinition<T>) -> Unit` + 函数类型参数中 `?T` 语法糖。
+- **层级**: render L1 / parser L2
+- **测试**: 271_generic_typealias_fn_type (4 个 typealias 全形态: Scope.(P)->T/(?T)->Unit/BeanDefinition<T>.()->Unit/ArrayList<T>; 含 Definition<T> lambda 2 参数 / OnCloseCallback<T> ?Int64 参数 / DefinitionOptions<T> 显式 b 参数); 回归 **263/263 单文件 + 36/36 项目全绿**。
+- **测量**:
+  - **1f**: 746 → **543** (-203, -27%)。undeclared type 177→62 (-115): DefinitionOptions×94/Definition×17/OnCloseCallback×4 全清 (主要簇); 残 62 为泛型参数 T/S 泄漏 (reified `T()` 类型字面量用法, R11+ 候选)。新揭示: unimplemented×42 (expect class 抽象方法未实现, 下游显露)、expected×163 (reified T 类型字面量)。
+  - **外溢核对**: 1g 1044 → **1033** (-11 正向, ksoup 亦有泛型 typealias 注释化受益); 2a 963 → **963** (0 中性, 无外溢)。
+- **R11 候选** (按杠杆排序):
+  - ① missing-argument×107 (Invalid 默认参数占位, state R9 候选 ③ 继承, 最大簇)
+  - ② expected×163 (reified `T()` 类型字面量簇, 高风险, 仓颉无 reified 概念, 可能需 stub 转发)
+  - ③ unimplemented×42 (expect class 抽象方法 stub 注入, 与 R9 候选 ④ 静态成员 stub 同源)
+  - ④ generic-receiver `extend<T> KoinDefinition<T>` 语法 (koin ~10 处, state R9 候选 ②)
+- **战役轮标**: 1f R10 (用户指定继续进攻, 非 auto 轮)。
+
 - **耗时**: ~60min
