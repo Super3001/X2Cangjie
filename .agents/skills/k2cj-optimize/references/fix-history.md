@@ -798,3 +798,13 @@
   5. **nested-class-in-interface**（须 datetime 抽象类层级先修 missing-abstract + shadow-member 再放开 class 提升）
   6. **String.replace(Rune→Regex) 误映射**（R17 揭示的独立簇）
 - **auto R4/20**。下一轮 auto R5/20 为定期校准节点。
+
+### 2026-07-12 — PARSER_BUG — 1f 泛型扩展函数簇: 裸名接收者的函数泛型误挂接收者
+- **目标**: 1f koin-core (R9, 用户手动指定复攻; 口径修正后真基线 4403, 旧 R8"7"系打印截断误计)
+- **文件**: `parser.rs` — `parse_fun` 扩展函数接收者环 (L808-840)
+- **修改**: ① 新增 `receiver_has_type_args` 门控: 仅接收者显式带 `<...>` 时泛型才归接收者并清空函数 generic_params; 裸名接收者 (`fun <R> Module.factoryOf`) 保留函数自身泛型 → `extend Module { func factoryOf<R>(...) }` (cjc 探针 output/probe/extend_generic_fn 证实 extend 内泛型成员函数+跨 arity 同名重载合法)。② 补丁二 (验收期自引入回归): `fun ArrayList<Int>.computeAvg()` (接收者带具体实参、无 `fun <T>` 前缀) 的 `<...>` 在 815 行分支被当函数泛型, 旧代码靠无条件拼接负负得正——解析完 `<...>` 后紧跟 `.` 则标记归接收者 (proj_extensions 项目测试抓获)
+- **层级**: L2
+- **测试**: 270_generic_extension_fn; 回归 262/262 + 36/36 全绿
+- **测量**: 1f 4403→746 (-83%); 外溢 1g 1044→1041 (-3 正向), 2a 964→962 (-2 正向)
+- **方法论**: 未随口径会签重测的旧 target 记录不可信, 复攻前必先新口径重测——1f"剩 7 错已知限制"实为 4403, 其 84% 是单根因; 另: 管线固化 translate_1f.py (project 模式)
+- **耗时**: ~60min

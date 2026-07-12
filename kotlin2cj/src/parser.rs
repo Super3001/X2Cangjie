@@ -808,24 +808,37 @@ impl Parser {
         let mut name = self.expect_ident()?;
         // 跳过接收者类型上的泛型实参（如 `fun <T> ArrayList<T>.foo()` 中的 `<T>`），
         // 这样后续扩展函数解析时 receiver_type = ArrayList + generic_suffix (= <T>)。
+        // 仅当接收者显式带 `<...>` 时泛型才归属接收者；裸名接收者
+        // （`fun <R> Module.factoryOf(...)`，Module 非泛型）的泛型属于函数自身，
+        // 渲染为 extend Module { func factoryOf<R>(...) }（cjc 探针验证合法）。
+        let mut receiver_has_type_args = false;
         if self.is_sym("<") && !generic_params.is_empty() {
-            let _ = self.try_skip_generic_args();
+            receiver_has_type_args = self.try_skip_generic_args();
         }
         // 函数自身泛型形参：`fun name<T>(...)`（仅在无 `<` 前缀且确认为函数泛型时）
         if self.is_sym("<") && generic_params.is_empty() {
             self.parse_generic_params(&mut generic_params, &mut generic_suffix);
+            // `fun ArrayList<Int>.avg()`（无 `fun <T>` 前缀）：此处的 `<...>` 实为
+            // 接收者的具体类型实参，归属接收者（extend ArrayList<Int64>）。
+            if self.is_sym(".") {
+                receiver_has_type_args = true;
+            }
         }
         // 扩展函数：`fun ReceiverType.name(...)` 或 `fun A.B.name(...)` → extend 语法
         let mut receiver_type: Option<String> = None;
         while self.eat_sym(".") {
             let recv = if let Some(prev) = receiver_type.take() {
                 format!("{}.{}", prev, map_type(&name))
-            } else {
+            } else if receiver_has_type_args {
                 format!("{}{}", map_type(&name), generic_suffix)
+            } else {
+                map_type(&name)
             };
             receiver_type = Some(recv);
             name = self.expect_ident()?;
-            generic_params.clear();
+            if receiver_has_type_args {
+                generic_params.clear();
+            }
         }
         self.push_scope();
         let params = self.parse_param_nodes()?;

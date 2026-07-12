@@ -41,7 +41,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
-| 1f | koin-core | koin | ~25 (实际 74) | 🟡 | R8: 7 errors (3 base_d_s_l L3 + 2 extend NonGenericClass<T> L2 + 2 Elvis+return L2) | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename), 72/72 翻译, 7 errors 全 L2-L3 已知限制,标记 🟡 blocked 切换 1g | C:/Codes/kotlin/koin |
+| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R9: **746**（新口径; R8"7"系打印截断误计, 真基线 4403） | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename); **R9 泛型扩展函数簇打穿**(裸名接收者的函数泛型归函数自身而非接收者, 4403→746 -83%, 用户手动指定复攻); 管线 translate_1f.py(project 模式)首次固化; R10 候选: 泛型 typealias 丢失(DefinitionOptions×94+Definition×17+OnCloseCallback×4, 带接收者函数类型)/generic-receiver extend 语法(extend<T> X<T>)/missing-argument×103(Invalid 默认参数) | C:/Codes/kotlin/koin |
 | 1g | ksoup-main | ksoup | 87 | ⏳ | R19: **1044**（auto 19 轮起点 1411, -26%） | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15) + R19 簇 not-member 子簇①② 嵌套类型限定链+appendCodePoint(-7, Syntax×7+OutputSettings×8清+StringBuilder-6=appendCodePoint; ~9 honest reveals; 2a 中性 964无外溢; 验收期修兜底撞车: 移除多级is_class_name兜底避221 StartTag枚举条目/类名撞车); 下一战役候选(R20=auto5校准轮): mismatched×245/undeclared id×124/not-member×101(ArrayList<Node>×15/Node×14/EscapeMode×9)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
@@ -126,6 +126,18 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1f 簇 generic-extension-fn (2026-07-12) — 泛型扩展函数簇打穿, 4403→746（用户手动指定, 1f 战役轮 R9）
+
+- **口径修正（本轮首要产出）**: 1f R8 记载"7 errors"系打印截断误计（旧 compile_r10.log 末行实为 "794 errors generated, 8 errors printed"; 1f 记录早于 2026-07-09 口径修正, 未随会签重测）。当前译器项目模式新译 + `--error-count-limit all` 真基线 = **4403**。旧 target_1f/ 为手工修补产物, 保留存档; 新一轮走 translate_1f.py（本轮首次固化管线, translate_1g.py 同款三态脚本）→ output/target_1f_r9。
+- **证实（真根因一句话）**: `parse_fun` 扩展函数接收者环无条件把函数级泛型后缀拼到接收者、再清空函数自身 generic_params——`inline fun <reified R, T1..> Module.factoryOf(...)`（koin factoryOf/singleOf/scopedOf DSL, R..T22 全 arity ~149 函数）被译成 `extend Module<R,T1,...>`（Module 非泛型）→ `undeclared type R/T1..T7+` ×3710（占基线 84%）+ 级联泛型实参数目错配×147。
+- **修复（parser.rs, L2 双补丁）**: ① 新增 `receiver_has_type_args` 门控——仅当接收者显式带 `<...>`（`fun <T> ArrayList<T>.foo()` 的 811 行跳过路径）才把泛型归接收者并清空函数泛型; 裸名接收者保留函数自身泛型, 渲染为 `extend Module { func factoryOf<R>(...) }`（cjc 探针证实: extend 内泛型成员函数 + 同名跨 arity 重载合法, output/probe/extend_generic_fn）。② 验收期抓到自引入回归并修复: `fun ArrayList<Int>.computeAvg()`（接收者带**具体**类型实参、无 `fun <T>` 前缀）走 815 行分支被当函数泛型, 旧代码靠无条件拼接负负得正——补 `<...>` 后紧跟 `.` 则归接收者（proj_extensions 项目测试当场抓获, 修复后复绿）。
+- **测量**:
+  - **1f**: 4403 → **746（-83%, -3657）**。undeclared R/T1..T22 全清; 残余大簇: undeclared type 177（DefinitionOptions×94/Definition×17/OnCloseCallback×4 = **带接收者泛型函数类型 typealias 被丢弃**, 已查证 OptionDSL.kt/BeanDefinition.kt/Callbacks.kt 三处定义, R10 头号候选）/ raw generic×104 / missing-argument×103（Invalid 默认参数占位）/ undeclared id×72 / unable-infer-generic×42。
+  - **外溢核对**: 1g 1044→**1041（-3 正向**, ksoup 亦有裸名接收者泛型扩展）; 2a 964→**962（-2 正向）**。
+- **测试**: 270_generic_extension_fn（裸名接收者 ×2 arity 重载 + 运行断言; 注记 generic-receiver `extend<T> X<T>` 语法缺口为 R10 候选, 现 `extend Box<T>` 形态 cjc 拒收——本就坏、无测试覆盖、本轮不扩範围）。回归 **262/262 单文件 + 36/36 项目全绿**。
+- **R10 候选**: ① 泛型 typealias 丢失（~115 直接 + 级联, 需带接收者函数类型展开机制） ② generic-receiver extend 语法 `extend<T> KoinDefinition<T>`（koin ~10 处, 兼修混合泛型全后缀误拼） ③ missing-argument Invalid×103（默认参数占位机制） ④ 静态成员 stub 簇（defaultContext/synchronized 等 28+9）。
+- **战役轮标**: 1f R9（用户手动指定复攻, 非 auto 轮; 审计"禁开新 target"不涉及——1f 系既有 🟡 target 解冻, 解冻依据 = 口径误计澄清 + 单根因大簇可行动）。
 
 ### 1g 簇 not-member (2026-07-10) — 子簇①② 嵌套类型限定链 + appendCodePoint（auto R4/20, 战役轮 R19）
 
