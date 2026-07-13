@@ -3294,13 +3294,13 @@ impl Engine {
         if let Some((idx, _)) = params
             .iter()
             .enumerate()
-            .find(|(i, (_, ty, _))| *i == params.len() - 1 && ty.starts_with("Array<"))
+            .find(|(i, (_, ty, _, _))| *i == params.len() - 1 && ty.starts_with("Array<"))
         {
             let mut rendered = Vec::new();
             for (i, arg) in args.iter().take(idx).enumerate() {
                 let s = self.render_arg(*arg)?;
                 match params.get(i) {
-                    Some((name, _, true)) => rendered.push(format!("{}: {}", name, s)),
+                    Some((name, _, true, _)) => rendered.push(format!("{}: {}", name, s)),
                     _ => rendered.push(s),
                 }
             }
@@ -3320,12 +3320,68 @@ impl Engine {
             rendered.push(value);
             return Some(rendered);
         }
-        if params.iter().any(|(_, _, has_default)| *has_default) {
+        // 函数签名带默认参数（降级后或原始）。
+        if params.iter().any(|(_, _, has_default, _)| *has_default)
+            || params.iter().any(|(_, _, _, orig)| *orig)
+        {
+            // trailing-lambda 场景：调用点 args 数 < params 数，且 args 末尾是 lambda
+            // （parser: parse_args 把 trailing lambda 作为 args[末尾]）。Kotlin 语义：
+            // args[0..N-1] 按位置对齐到 params[0..N-1]，args[N-1] (lambda) 对齐到
+            // params[M-1]（末尾 lambda 类型参数），中间 params[N-1..M-1) 共 M-N 个
+            // 位置被省略——这些位置在 Kotlin 源码侧必须有默认值（fn_params 第四元=true）。
+            // 仓颉侧：被降级的位置参数补 `Option.None`，未降级的命名参数补 `name: None`。
+            if args.len() < params.len() && args.len() >= 1 {
+                let middle_start = args.len() - 1;
+                let middle_end = params.len() - 1;
+                if middle_start < middle_end {
+                    let middle_all_orig_default = (middle_start..middle_end)
+                        .all(|i| params.get(i).map_or(false, |(_, _, _, orig)| *orig));
+                    if middle_all_orig_default {
+                        let mut rendered = Vec::with_capacity(params.len());
+                        // 1. args[0..middle_start] → params[0..middle_start] 按位置对齐
+                        for i in 0..middle_start {
+                            let s = self.render_arg(args[i])?;
+                            match params.get(i) {
+                                Some((pname, _, true, _)) => {
+                                    rendered.push(format!("{}: {}", pname, s))
+                                }
+                                _ => rendered.push(s),
+                            }
+                        }
+                        // 2. 中间 params[middle_start..middle_end] 补默认值
+                        for i in middle_start..middle_end {
+                            if let Some((pname, ty, degraded, _)) = params.get(i) {
+                                if !ty.starts_with('?') {
+                                    return None; // 非 ?T 默认值暂不支持（保守）
+                                }
+                                if *degraded {
+                                    rendered.push(format!("{}: None", pname));
+                                } else {
+                                    rendered.push("Option.None".to_string());
+                                }
+                            }
+                        }
+                        // 3. args[末尾] (lambda) → params[末尾]
+                        let last_arg_idx = args.len() - 1;
+                        let last_param_idx = params.len() - 1;
+                        let s = self.render_arg(args[last_arg_idx])?;
+                        match params.get(last_param_idx) {
+                            Some((pname, _, true, _)) => {
+                                rendered.push(format!("{}: {}", pname, s))
+                            }
+                            _ => rendered.push(s),
+                        }
+                        return Some(rendered);
+                    }
+                }
+            }
+            // 默认路径：args 按位置对齐到 params[0..args.len()]，
+            // 对降级后带 `!` 的位置加 name: 前缀。
             let mut rendered = Vec::with_capacity(args.len());
             for (i, x) in args.iter().enumerate() {
                 let s = self.render_arg(*x)?;
                 match params.get(i) {
-                    Some((pname, _, true)) => rendered.push(format!("{}: {}", pname, s)),
+                    Some((pname, _, true, _)) => rendered.push(format!("{}: {}", pname, s)),
                     _ => rendered.push(s),
                 }
             }
@@ -3344,13 +3400,23 @@ impl Engine {
         }
     }
 
-    /// 查找名为 `fname` 的用户函数或类构造器，返回其参数（安全名, 类型, 是否有默认值）列表。
-    pub(crate) fn fn_params(&self, fname: &str) -> Option<Vec<(String, String, bool)>> {
+    /// 查找名为 `fname` 的用户函数或类构造器，返回其参数列表。
+    /// 每项为 (安全名, 类型, has_default_degraded, has_default_original)。
+    /// - has_default_degraded: 定义侧降级后是否仍带 `!` 与默认值（true=带，调用点用 name: 前缀）。
+    /// - has_default_original: Kotlin 源码侧是否有默认值（不被降级影响；调用点补 None 用）。
+    pub(crate) fn fn_params(&self, fname: &str) -> Option<Vec<(String, String, bool, bool)>> {
         let target = crate::parser::safe_name(fname);
+        // 调用点带显式泛型实参时（`decorate<Int>(b)` 由 peek_is_generic_ctor 走
+        // NameRef("decorate<Int64>") 路径），fname 形如 `"decorate<Int64>"`；func_index
+        // 用裸名 `"decorate"` 作 key，strip `<...>` 后缀以匹配索引。
+        let target = match target.find('<') {
+            Some(i) => target[..i].to_string(),
+            None => target,
+        };
         // 先查函数索引
         if let Some(&fid) = self.func_index.get(&target) {
             if let Kind::Func { params, .. } = &self.g.nodes[fid].kind {
-                let mut out = Vec::new();
+                let mut out: Vec<(String, String, bool, bool)> = Vec::new();
                 let mut any_default = false;
                 for p in params {
                     if let Kind::Param {
@@ -3364,14 +3430,16 @@ impl Engine {
                         } else {
                             "_".to_string()
                         };
-                        let has = default.is_some();
-                        any_default = any_default || has;
-                        out.push((pn, ty.clone(), has));
+                        let orig_has = default.is_some();
+                        any_default = any_default || orig_has;
+                        // (name, ty, has_default_degraded, has_default_original)
+                        out.push((pn, ty.clone(), orig_has, orig_has));
                     }
                 }
                 // 与 render_func 的声明侧降级一致：中位默认值参数（其后还有无默认值
                 // 参数）按位置参数处理，调用点不再加 `name:` 前缀。
-                if let Some(lp) = out.iter().rposition(|(_, _, has)| !*has) {
+                // 仅降级 has_default_degraded（第三个），保留 has_default_original（第四个）。
+                if let Some(lp) = out.iter().rposition(|(_, _, has, _)| !*has) {
                     for item in out.iter_mut().take(lp) {
                         item.2 = false;
                     }
@@ -3379,7 +3447,7 @@ impl Engine {
                 if any_default
                     || out
                         .last()
-                        .map_or(false, |(_, ty, _)| ty.starts_with("Array<"))
+                        .map_or(false, |(_, ty, _, _)| ty.starts_with("Array<"))
                 {
                     return Some(out);
                 }
@@ -3389,17 +3457,17 @@ impl Engine {
         // 再查类索引（构造器默认参数）
         if let Some(&cid) = self.class_index.get(&target) {
             if let Kind::Class { ctor_params, .. } = &self.g.nodes[cid].kind {
-                let mut out = Vec::new();
+                let mut out: Vec<(String, String, bool, bool)> = Vec::new();
                 let mut any_default = false;
                 for p in ctor_params {
-                    let has = p.default.is_some();
-                    any_default = any_default || has;
-                    out.push((p.name.clone(), p.ty.clone(), has));
+                    let orig_has = p.default.is_some();
+                    any_default = any_default || orig_has;
+                    out.push((p.name.clone(), p.ty.clone(), orig_has, orig_has));
                 }
                 if any_default
                     || out
                         .last()
-                        .map_or(false, |(_, ty, _)| ty.starts_with("Array<"))
+                        .map_or(false, |(_, ty, _, _)| ty.starts_with("Array<"))
                 {
                     return Some(out);
                 }
