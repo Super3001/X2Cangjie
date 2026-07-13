@@ -3294,13 +3294,13 @@ impl Engine {
         if let Some((idx, _)) = params
             .iter()
             .enumerate()
-            .find(|(i, (_, ty, _, _))| *i == params.len() - 1 && ty.starts_with("Array<"))
+            .find(|(i, (_, ty, _, _, _))| *i == params.len() - 1 && ty.starts_with("Array<"))
         {
             let mut rendered = Vec::new();
             for (i, arg) in args.iter().take(idx).enumerate() {
                 let s = self.render_arg(*arg)?;
                 match params.get(i) {
-                    Some((name, _, true, _)) => rendered.push(format!("{}: {}", name, s)),
+                    Some((name, _, true, _, _)) => rendered.push(format!("{}: {}", name, s)),
                     _ => rendered.push(s),
                 }
             }
@@ -3321,28 +3321,31 @@ impl Engine {
             return Some(rendered);
         }
         // 函数签名带默认参数（降级后或原始）。
-        if params.iter().any(|(_, _, has_default, _)| *has_default)
-            || params.iter().any(|(_, _, _, orig)| *orig)
+        if params.iter().any(|(_, _, has_default, _, _)| *has_default)
+            || params.iter().any(|(_, _, _, orig, _)| *orig)
         {
             // trailing-lambda 场景：调用点 args 数 < params 数，且 args 末尾是 lambda
             // （parser: parse_args 把 trailing lambda 作为 args[末尾]）。Kotlin 语义：
             // args[0..N-1] 按位置对齐到 params[0..N-1]，args[N-1] (lambda) 对齐到
             // params[M-1]（末尾 lambda 类型参数），中间 params[N-1..M-1) 共 M-N 个
             // 位置被省略——这些位置在 Kotlin 源码侧必须有默认值（fn_params 第四元=true）。
-            // 仓颉侧：被降级的位置参数补 `Option.None`，未降级的命名参数补 `name: None`。
+            // 仓颉侧：用 fn_params 第五元 default_value_str 补默认值——
+            //   - 降级的位置参数（无 `!`）→ 直接 push 默认值字符串（位置补值）
+            //   - 未降级的命名参数（带 `!`）→ push `name: 默认值`（命名补值）
+            //   - 默认值渲染失败（None）→ 全函数 return None，让默认路径处理（保守）
             if args.len() < params.len() && args.len() >= 1 {
                 let middle_start = args.len() - 1;
                 let middle_end = params.len() - 1;
                 if middle_start < middle_end {
                     let middle_all_orig_default = (middle_start..middle_end)
-                        .all(|i| params.get(i).map_or(false, |(_, _, _, orig)| *orig));
+                        .all(|i| params.get(i).map_or(false, |(_, _, _, orig, _)| *orig));
                     if middle_all_orig_default {
                         let mut rendered = Vec::with_capacity(params.len());
                         // 1. args[0..middle_start] → params[0..middle_start] 按位置对齐
                         for i in 0..middle_start {
                             let s = self.render_arg(args[i])?;
                             match params.get(i) {
-                                Some((pname, _, true, _)) => {
+                                Some((pname, _, true, _, _)) => {
                                     rendered.push(format!("{}: {}", pname, s))
                                 }
                                 _ => rendered.push(s),
@@ -3350,14 +3353,12 @@ impl Engine {
                         }
                         // 2. 中间 params[middle_start..middle_end] 补默认值
                         for i in middle_start..middle_end {
-                            if let Some((pname, ty, degraded, _)) = params.get(i) {
-                                if !ty.starts_with('?') {
-                                    return None; // 非 ?T 默认值暂不支持（保守）
-                                }
+                            if let Some((pname, _, degraded, _, default_str)) = params.get(i) {
+                                let dv = default_str.as_ref()?;
                                 if *degraded {
-                                    rendered.push(format!("{}: None", pname));
+                                    rendered.push(format!("{}: {}", pname, dv));
                                 } else {
-                                    rendered.push("Option.None".to_string());
+                                    rendered.push(dv.clone());
                                 }
                             }
                         }
@@ -3366,7 +3367,7 @@ impl Engine {
                         let last_param_idx = params.len() - 1;
                         let s = self.render_arg(args[last_arg_idx])?;
                         match params.get(last_param_idx) {
-                            Some((pname, _, true, _)) => {
+                            Some((pname, _, true, _, _)) => {
                                 rendered.push(format!("{}: {}", pname, s))
                             }
                             _ => rendered.push(s),
@@ -3381,7 +3382,9 @@ impl Engine {
             for (i, x) in args.iter().enumerate() {
                 let s = self.render_arg(*x)?;
                 match params.get(i) {
-                    Some((pname, _, true, _)) => rendered.push(format!("{}: {}", pname, s)),
+                    Some((pname, _, true, _, _)) => {
+                        rendered.push(format!("{}: {}", pname, s))
+                    }
                     _ => rendered.push(s),
                 }
             }
@@ -3404,7 +3407,15 @@ impl Engine {
     /// 每项为 (安全名, 类型, has_default_degraded, has_default_original)。
     /// - has_default_degraded: 定义侧降级后是否仍带 `!` 与默认值（true=带，调用点用 name: 前缀）。
     /// - has_default_original: Kotlin 源码侧是否有默认值（不被降级影响；调用点补 None 用）。
-    pub(crate) fn fn_params(&self, fname: &str) -> Option<Vec<(String, String, bool, bool)>> {
+    /// 查找名为 `fname` 的用户函数或类构造器，返回其参数列表。
+    /// 每项为 (安全名, 类型, has_default_degraded, has_default_original, default_value_str)。
+    /// - has_default_degraded: 定义侧降级后是否仍带 `!` 与默认值（true=带，调用点用 name: 前缀）。
+    /// - has_default_original: Kotlin 源码侧是否有默认值（不被降级影响；调用点补默认值用）。
+    /// - default_value_str: Kotlin 源码侧默认值渲染字符串（`Option<String>`，None=无默认值或渲染失败）。
+    pub(crate) fn fn_params(
+        &self,
+        fname: &str,
+    ) -> Option<Vec<(String, String, bool, bool, Option<String>)>> {
         let target = crate::parser::safe_name(fname);
         // 调用点带显式泛型实参时（`decorate<Int>(b)` 由 peek_is_generic_ctor 走
         // NameRef("decorate<Int64>") 路径），fname 形如 `"decorate<Int64>"`；func_index
@@ -3416,7 +3427,7 @@ impl Engine {
         // 先查函数索引
         if let Some(&fid) = self.func_index.get(&target) {
             if let Kind::Func { params, .. } = &self.g.nodes[fid].kind {
-                let mut out: Vec<(String, String, bool, bool)> = Vec::new();
+                let mut out: Vec<(String, String, bool, bool, Option<String>)> = Vec::new();
                 let mut any_default = false;
                 for p in params {
                     if let Kind::Param {
@@ -3432,14 +3443,18 @@ impl Engine {
                         };
                         let orig_has = default.is_some();
                         any_default = any_default || orig_has;
-                        // (name, ty, has_default_degraded, has_default_original)
-                        out.push((pn, ty.clone(), orig_has, orig_has));
+                        // 默认值渲染字符串（Kotlin `= null` 在 parser 已映射为 `None` 字面量；
+                        // `= false`/`0`/`""` 等保持原字面量形态）。
+                        let default_str = default.and_then(|d| self.t(d));
+                        // (name, ty, has_default_degraded, has_default_original, default_str)
+                        out.push((pn, ty.clone(), orig_has, orig_has, default_str));
                     }
                 }
                 // 与 render_func 的声明侧降级一致：中位默认值参数（其后还有无默认值
                 // 参数）按位置参数处理，调用点不再加 `name:` 前缀。
-                // 仅降级 has_default_degraded（第三个），保留 has_default_original（第四个）。
-                if let Some(lp) = out.iter().rposition(|(_, _, has, _)| !*has) {
+                // 仅降级 has_default_degraded（第三个），保留 has_default_original（第四个）
+                // 与 default_str（第五个）。
+                if let Some(lp) = out.iter().rposition(|(_, _, has, _, _)| !*has) {
                     for item in out.iter_mut().take(lp) {
                         item.2 = false;
                     }
@@ -3447,7 +3462,7 @@ impl Engine {
                 if any_default
                     || out
                         .last()
-                        .map_or(false, |(_, ty, _, _)| ty.starts_with("Array<"))
+                        .map_or(false, |(_, ty, _, _, _)| ty.starts_with("Array<"))
                 {
                     return Some(out);
                 }
@@ -3457,17 +3472,18 @@ impl Engine {
         // 再查类索引（构造器默认参数）
         if let Some(&cid) = self.class_index.get(&target) {
             if let Kind::Class { ctor_params, .. } = &self.g.nodes[cid].kind {
-                let mut out: Vec<(String, String, bool, bool)> = Vec::new();
+                let mut out: Vec<(String, String, bool, bool, Option<String>)> = Vec::new();
                 let mut any_default = false;
                 for p in ctor_params {
                     let orig_has = p.default.is_some();
                     any_default = any_default || orig_has;
-                    out.push((p.name.clone(), p.ty.clone(), orig_has, orig_has));
+                    let default_str = p.default.and_then(|d| self.t(d));
+                    out.push((p.name.clone(), p.ty.clone(), orig_has, orig_has, default_str));
                 }
                 if any_default
                     || out
                         .last()
-                        .map_or(false, |(_, ty, _, _)| ty.starts_with("Array<"))
+                        .map_or(false, |(_, ty, _, _, _)| ty.starts_with("Array<"))
                 {
                     return Some(out);
                 }
