@@ -20,7 +20,40 @@
 
 ## 记录
 
-### 2026-06-14 — RENDER_GAP — Index on String 需 .get() 而非 []
+### 2026-07-13 — RENDER_GAP — 非 ?T 默认值补值（1f R12 trailing-lambda-default 簇非可空子簇）
+- **目标**: 1f koin-core (R12)
+- **错误**: 1f R11 baseline 619 含 missing-argument×37，其中 23 处是 koin `single(qualifier: Qualifier? = null, createdAtStart: Boolean = false, definition: Definition<T>)` 的 trailing lambda 调用——createdAtStart 是 `Bool = false`（非 ?T），R11 修复时保守要求中间被省略的位置类型以 `?` 开头，createdAtStart 不符合，所以 R11 没修这 23 处。
+- **文件**: `render.rs` — `fn_params` + `render_call_args_with_params`
+- **修改**:
+  - **fn_params 返回五元组** `(name, ty, has_default_degraded, has_default_original, default_value_str: Option<String>)`：第五元是 Kotlin 源码侧默认值渲染字符串（`default.and_then(|d| self.t(d))`）。`null` 在 parser 已映射为 `None` 字面量；`false`/`0`/`""` 等保持原字面量形态。
+  - **render_call_args_with_params 用 default_value_str 补默认值**：中间被跳过的位置不再硬编码 `Option.None`，而是用 fn_params 返回的 default_value_str——降级的位置参数直接 push `dv`（位置补值），未降级的命名参数 push `name: dv`（命名补值）。如果 default_value_str 是 None（渲染失败），整个函数 return None 让默认路径处理（保守）。
+- **层级**: L2（render.rs，~30 行改动，扩元 + 默认值补值路径调整）
+- **测试**: 新增 273_non_nullable_default（顶层函数 `single<R>(c, qualifier: String? = null, createdAtStart: Boolean = false, def: () -> R)` + `withLimit<R>(c, seed: Int = 0, def: (Int) -> R)` 两路非可空中位默认参数；验证位置补值 `None`/`false`/`0` 形态 + 显式传值不进入补默认值分支）
+- **测量**:
+  - **1f**: 619→**641**（净 +22，但 missing-argument 簇 37→10 **-27, 73% 消灭**；累 R11+R12 共 -95，**89% 消灭**）。SOC 级联：undeclared 209→233（+24，下游错误显现）。按 autonomous-strategy "以累计消灭根因簇数计进展"原则，本轮消灭 trailing-lambda-default 簇非可空子簇 73%。
+  - **外溢**: 1g 1032→**1034**（+2 重译漂移容差内）；2a 968→**970**（+2 重译漂移容差内）。
+- **回归**: 265/265 单文件 + 36/36 项目全绿（R11 后 264 + 新增 273，原 264 全无回归）。
+- **耗时**: ~35min
+- **R13 候选**: ① missing-argument 残 10（5 单参数 in-call + 3 命名参数缺失 + 1 KClass 反射，已非 trailing-lambda 簇）；② appDeclaration() 函数类型变量调用补 `.invoke()`；③ peek_is_generic_ctor 把 `c.make<String>` 误判为 `<` 比较（parser.rs）；④ expected×83（reified T 类型字面量簇，高风险）；⑤ unimplemented×42（expect class 抽象方法 stub）。
+
+### 2026-07-13 — RENDER_GAP — trailing-lambda 调用 + 中位默认参数降级丢失默认值（1f R11 trailing-lambda-default 簇）
+- **目标**: 1f koin-core (R11)
+- **错误**: 1f R10 baseline 543 含 missing-argument×107，分桶后 92 处集中在 koin DSL `factoryOf/singleOf/scopedOf` 族的 trailing lambda 调用 `factory { lambda }`：Kotlin 中位默认参数 `qualifier: Qualifier? = null` 被 R2 中位默认参数降级 (render.rs:1378-1395 + fn_params:3374-3378) 后丢 `!` 和 `= None` 变成位置参数，cjc 报 "missing argument for parameter list '(Option<Qualifier>, (Scope, ParametersHolder) -> ...)' in call"。R2 注释"Kotlin 侧中位默认值本就无法按位置省略，调用点不受影响"漏掉了 trailing lambda：`f { lambda }` 在 Kotlin 合法（lambda 给末尾 lambda 类型参数，前面默认参数省略）。
+- **文件**: `render.rs` — `fn_params` + `render_call_args_with_params`
+- **修改**:
+  - **fn_params 返回四元组** `(name, ty, has_default_degraded, has_default_original)`：第三元保留 R2 降级逻辑（与 render_func 声明侧一致），第四元是 Kotlin 源码侧原始默认值有无（不被降级）。调用点据此识别"被省略的中间位置是否原本有默认值"。
+  - **render_call_args_with_params 新增 trailing-lambda 对齐分支**: 当 `args.len() < params.len()` 且 `args.len() >= 1` 时，假设 args[末尾] 是 trailing lambda（parser.parse_args 把 trailing lambda 作为 args 末尾元素），对齐到 params[末尾]，args[0..N-1] 按位置对齐到 params[0..N-1]，**中间 params[N-1..M-1) 共 M-N 个位置**（被跳过）必须有原始默认值；对降级的位置参数补 `Option.None`（位置补值，因定义侧降级无 `!`），对未降级的命名参数补 `name: None`（命名补值，因定义侧带 `!`）。仓颉 cjc 1.0.5 探针 4 个实证。
+  - **fn_params strip `<...>` 后缀**: peek_is_generic_ctor 把 `decorate<Int>(b)` 也当泛型构造，callee.original = `"decorate<Int64>"`，func_index 用裸名 `"decorate"` 作 key 找不到。strip `<` 后部分以匹配索引。这是 R11 实施 272 测试时发现的连带 bug。
+- **层级**: L2（render.rs，+70 行，新增逻辑分支 + fn_params 返回类型扩元）
+- **测试**: 新增 272_trailing_lambda_default（顶层函数 `decorate<R>(box, opts: T? = null, def: (Int) -> R)` + 类成员函数 `make<R>(qual: String? = null, def: () -> R)` 两路 trailing lambda 默认参数补 None；验证位置补值 `Option.None` 形态 + 调用点对齐中间被省略的可空默认参数）
+- **测量**:
+  - **1f**: 543→**619**（净 +76，但 missing-argument 簇 107→37 **-68, 64% 消灭**）。SOC 级联：missing-argument 被遮蔽的下游错误显现——undeclared 138→209（+71，主要是 new()×69 trailing lambda 解锁后调用点暴露真错）。autonomous-strategy "以累计消灭根因簇数计进展"原则，本轮消灭 missing-argument 簇 64%。
+  - **外溢**: 1g 1044→**1032**（-12 正向，ksoup 亦有 trailing lambda 默认参数调用受益）；2a 963→**968**（+5 重译漂移容差内）。
+- **回归**: 264/264 单文件 + 36/36 项目全绿（原 263 + 新增 272，原 263 全无回归）。
+- **耗时**: ~50min
+- **R12 候选**: ① 支持 ?T 外默认值（Bool=false/Int=0/String=""），fn_params 返回 Param.default NodeId 渲染默认值，可多修 single/scoped 的 createdAtStart: Bool=false 簇（~28 处）；② appDeclaration() 函数类型变量调用补 `.invoke()`；③ peek_is_generic_ctor 把 `c.make<String>` 误判为 `<` 比较（receiver+method+泛型实参形态，parser.rs）；④ expected×163 reified T 类型字面量簇（高风险）；⑤ unimplemented×42 expect class 抽象方法 stub。
+
+### 2026-07-06 — RENDER_GAP — Index on String 需 .get() 而非 []
 - **目标**: ksoup
 - **文件**: `render.rs` — `render_index()`
 - **修改**: String 下标 `x[i]` → `x.get(i)` 或 `x.toRuneArray()[i]`

@@ -41,7 +41,7 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 | 1c | okhttp-mockwebserver | okhttp | ~30 | ✅ | 444 (cross-pkg deps) | builder, interceptor, coroutine |
 | 1d | ksoup-parser | ksoup | 16 | ⏳ | 随 1g 全量口径重测 (1g R5: 1411) | state machine, when, inline; R2 stdlib stub + R3 ctor-param/optional-param + R4 it-shadowing 修复完成 | C:/Codes/kotlin/ksoup |
 | 1e | ktor-io | ktor | 5 (核心)/14 | ✅ | 0 | P1/P2/P3译器修复;核心5文件收敛,余9剪枝(依赖边界+render gap); **运行时验证 ✅ 2026-07-10**(审计修正b): 当前译器重译 5/5→build 0 err→行为断言全对(enum dispatch/bitmask contains/plus/toString when-分派/toIntOrFail throw), 产物 output/target_1e_verify/; 已知偏差: Int→Int64 使 toIntOrFail 阈值 2³¹-1→2⁶³-1 | C:/projects/kotlins/ktor |
-| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R10: **543**（-203 from R9 746, -27%） | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename); **R9 泛型扩展函数簇打穿**(裸名接收者的函数泛型归函数自身而非接收者, 4403→746 -83%, 用户手动指定复攻); 管线 translate_1f.py(project 模式)首次固化; **R10 泛型 typealias 渲染层解注释 + parser `<` 后漏检 ReceiverType<T>.() 修复**(双 bug 互锁, 746→543 -27%, 仓颉 1.0.5 探针矩阵 6 个实证支持 `type X<T>=Y` + `(?T)->Unit` + `(BeanDefinition<T>)->Unit` 三态); 外溢 1g 1044→1033(-11), 2a 963→963(0 中性); R11 候选: missing-argument×107(Invalid 默认参数占位)/expected×163(reified T 类型字面量,高风险)/unimplemented×42(expect class 抽象方法 stub)/generic-receiver extend<T> X<T>(koin~10处) | C:/Codes/kotlin/koin |
+| 1f | koin-core | koin | ~25 (实际 74) | ⏳ | R12: **641**（净 +22 from R11 619; missing-argument 簇 37→10 -27 73%, 累 R11+R12 共 -95 89% 消灭） | DSL, delegate, reified; R1 修 3 parse 簇, R2-R8 修 6 簇 (ctor-default/star-proj/throw-elvis/extension-property/top-level-collision/fully-quoted/typealias/basename); **R9 泛型扩展函数簇打穿**(裸名接收者的函数泛型归函数自身而非接收者, 4403→746 -83%, 用户手动指定复攻); 管线 translate_1f.py(project 模式)首次固化; **R10 泛型 typealias 渲染层解注释 + parser `<` 后漏检 ReceiverType<T>.() 修复**(双 bug 互锁, 746→543 -27%, 仓颉 1.0.5 探针矩阵 6 个实证支持 `type X<T>=Y` + `(?T)->Unit` + `(BeanDefinition<T>)->Unit` 三态); 外溢 1g 1044→1033(-11), 2a 963→963(0 中性); **R11 trailing-lambda 默认参数补 None**(fn_params 返回 (name,ty,has_default_degraded,has_default_original) 四元组, render_call_args_with_params 对 args<params 的中位可空默认参数补 `Option.None`(降级) 或 `name: None`(未降级); 同时修 fn_params strip `<...>` 后缀匹配带泛型实参调用点如 `decorate<Int64>(b)`; 543→619 净但 missing-argument 簇 107→37 -68 64%消灭, 揭示被遮蔽下游 undeclared×~67 主要是 new()×69; 外溢 1g 1044→1032(-12 正向), 2a 963→968(+5 重译漂移容差内)); **R12 非 ?T 默认值补值**(fn_params 返回五元组含 default_value_str: Option<String>, render_call_args_with_params 用渲染默认值字符串补中位非可空默认参数 Bool=false/Int=0/String=""; 619→641 净+22 但 missing-argument 37→10 -27 73% 消灭, 累 R11+R12 共 -95 89%; 揭示下游 undeclared 209→233 +24; 外溢 1g 1032→1034(+2 漂移), 2a 968→970(+2 漂移), 均 ±3-5 容差内)); R13 候选: missing-argument 残 10(5 单参数 in-call + 3 命名参数缺失 + 1 KClass 反射, 已非 trailing-lambda 簇)/appDeclaration() 函数类型变量调用需 .invoke()/peek_is_generic_ctor 把小写函数 `c.make<String>` 误判为 `<` 比较/expected×83(reified T 类型字面量,高风险)/unimplemented×42(expect class 抽象方法 stub) | C:/Codes/kotlin/koin |
 | 1g | ksoup-main | ksoup | 87 | ⏳ | R19: **1044**（auto 19 轮起点 1411, -26%）→ R10 外溢核对 **1033** | Option 战役四批 + R15 isNullOrEmpty(-59) + R16 簇A① enum-entry-body(-12) + R17 簇A② companion 标量常量提升(-6) + R18 簇A FilterResult 嵌套enum-in-interface提升(-15) + R19 簇 not-member 子簇①② 嵌套类型限定链+appendCodePoint(-7, Syntax×7+OutputSettings×8清+StringBuilder-6=appendCodePoint; ~9 honest reveals; 2a 中性 964无外溢; 验收期修兜底撞车: 移除多级is_class_name兜底避221 StartTag枚举条目/类名撞车); 下一战役候选(R20=auto5校准轮): mismatched×245/undeclared id×124/not-member×101(ArrayList<Node>×15/Node×14/EscapeMode×9)/簇A真方法分派(read,高风险)/nested-class-in-interface/String.replace(Rune→Regex) | C:/Codes/kotlin/ksoup |
 
 > ⏳ = in-progress, 🔒 = locked, ✅ = converged, 🟡 = blocked, ❌ = stuck
@@ -126,6 +126,25 @@ Phase 0       Phase 1                          Phase 2       Phase 3       Phase
 ---
 
 ## 历史记录
+
+### 1f 簇 trailing-lambda-default (2026-07-13) — fn_params 返回原始默认值, 调用点对齐中间可空默认参数补 None（1f 战役轮 R11）
+
+- **诊断**: 1f R10 baseline 543 含 missing-argument×107（state R11 候选 ①）。分桶后 92 处集中在 koin DSL `factoryOf/singleOf/scopedOf` 族的 trailing lambda 调用 `factory { lambda }`：Kotlin 源码 `factory(qualifier: Qualifier? = null, noinline definition: Definition<T>)` 中位默认参数 `= null` 在 R2 中位默认参数降级 (render.rs:1378-1395 + fn_params:3374-3378) 后丢 `!` 和 `= None` 变成位置参数；cjc 报 "missing argument for parameter list '(Option<Qualifier>, (Scope, ParametersHolder) -> ...)' in call"。R2 的注释 "Kotlin 侧中位默认值本就无法按位置省略,调用点不受影响" 漏掉了 trailing lambda：`f { lambda }` 在 Kotlin 是合法的（lambda 给末尾 lambda 类型参数，前面默认参数省略），降级后丢失默认值导致 cjc 报 missing。
+- **修复（render.rs L2 双修, +70 行）**:
+  - **fn_params 改造返回四元组**: `(name, ty, has_default_degraded, has_default_original)`——第三元保留 R2 降级逻辑（与 render_func 声明侧一致），第四元是 Kotlin 源码侧**原始**默认值有无（不被降级）。调用点据此识别"被省略的中间位置是否原本有默认值"。
+  - **render_call_args_with_params 新增 trailing-lambda 对齐分支**: 当 `args.len() < params.len()` 且 `args.len() >= 1` 时，假设 args[末尾] 是 trailing lambda（parser.parse_args 把 trailing lambda 作为 args 末尾元素），对齐到 params[末尾]，args[0..N-1] 按位置对齐到 params[0..N-1]，**中间 params[N-1..M-1) 共 M-N 个位置**（被跳过）必须有原始默认值，对降级的位置参数补 `Option.None`（位置补值，因定义侧带降级无 `!`），对未降级的命名参数补 `name: None`（命名补值，因定义侧带 `!`）。仓颉 cjc 1.0.5 探针 4 个实证支持：全命名参数定义 + 调用点显式命名传值 + 位置参数定义 + 位置补值（带 Option.None）。
+  - **fn_params strip `<...>` 后缀**: peek_is_generic_ctor 把 `decorate<Int>(b)` 也当泛型构造，callee.original = `"decorate<Int64>"`，func_index 用裸名 `"decorate"` 作 key 找不到。strip `<` 后部分以匹配索引。这是 R11 实施 272 测试时发现的连带 bug。
+- **测量**:
+  - **1f**: 543 → **619**（净 +76, 但 missing-argument 簇 107→37 **-68, 64% 消灭**）。**SOC 级联**: missing-argument 被遮蔽的下游错误显现——undeclared 138→209（+71, 主要是 new()×69 的 trailing lambda 解锁后调用点暴露真错）。这是典型 parse/missing-argument 簇修复的"净数增加但簇消灭"现象，按 autonomous-strategy "以累计消灭根因簇数计进展"原则，本轮消灭 missing-argument 簇 64%。
+  - **外溢核对**: 1g 1044→**1032（-12 正向, ksoup 亦有 trailing lambda 默认参数调用受益）**；2a 963→**968（+5 重译漂移容差内, ±3-5 容差）**。
+- **测试**: 272_trailing_lambda_default（顶层函数 + 类成员函数两路 trailing lambda 默认参数补 None，验证位置补值 `Option.None` 形态 + 调用点对齐中间被省略的可空默认参数）。回归 **264/264 单文件 + 36/36 项目全绿**（原 263 + 新增 272，原 263 全无回归）。
+- **R12 候选（按杠杆排序）**:
+  - ① **支持非 ?T 默认值**（Bool=false/Int=0/String=""）：fn_params 返回 Param.default NodeId，调用点对中间被省略的非可空默认参数渲染默认值。可多修 single/scoped 的 createdAtStart: Bool=false 簇（~28 处）
+  - ② **appDeclaration() 函数类型变量调用**: 把函数类型变量调用补 `.invoke()`（仓颉要求显式）
+  - ③ **peek_is_generic_ctor 把小写函数 `c.make<String>` 误判为 `<` 比较**: parser.rs，需识别 receiver+method+泛型实参形态
+  - ④ expected×163（reified `T()` 类型字面量簇, 高风险）
+  - ⑤ unimplemented×42（expect class 抽象方法 stub 注入）
+- **战役轮标**: 1f R11（用户指定继续进攻 1f, 非 auto 轮）。
 
 ### 1f 簇 generic-typealias-fn-type (2026-07-12) — 泛型 typealias 渲染层解注释 + ReceiverType<T>.() 解析漏检修复（用户指定继续进攻 1f, 1f 战役轮 R10）
 
