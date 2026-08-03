@@ -20,6 +20,60 @@
 
 ## 记录
 
+### 2026-07-13 — REIFIED_T — R14 attempt failed: `get()` 推断 + `<: Object` bound 三层 cascade 反弹 (+154 errors, reverted)
+
+- **目标**: 1f koin-core (R14 attempt, 用户指定继续进攻 1f)
+- **意图**: 攻 R13 揭示的 `'onOptions' is not a member of class 'Object'` ×92 cascade 根因——`Scope.new` body 内 `get()` 不能推断 `<T1>` (reified T 类型字面量丢失)。
+- **三次尝试 + 三次反弹**:
+  1. **v1** (只加 `get<T1>()` rewrite + `where T1 <: Object` bound on `new`): 549→**615** (+66 regression). `onOptions` 92→4 (-88 cleared!) BUT 浮现新 cascade `parameters of this lambda expression must have type annotations` ×88 (因 lambda body 终于可类型检查, cjc 要求 `scope, params` 标注) + cascade `generic type should be used with type argument` ×88 (因 lambda 类型未知→None 类型不可推断)
+  2. **v2** (v1 + 加类型标注 `scope: Scope, params: ParametersHolder`): 615→**703** (+88 regression). `parameters-must-have` 88→3 (cleared!) BUT 浮现新 cascade `unable to infer generic argument` ×88 (at call site `scope.new(constructor)` — cjc 不能推断 R)
+  3. **probe 验证 cjc 类型系统限制**: 即使加 explicit type args `scope.new<R, T1>(constructor)` + `<: Object` bound on `factoryOf`, cjc 仍报 `Int64 is not a subtype of Class-Object` (Cangjie 1.0.5 `Int64` 不是 `<: Object`) + `mismatched types` (lambda 返回 `Generics-R` 而非 `Int64`, cjc 不传播泛型实参通过 nested generic call)
+- **根因（一句话）**: Cangjie 1.0.5 类型系统两个 fundamental 限制阻碍此簇修复——(a) `Int64` 不是 `<: Object` (primitive 不是 reference type subtype), koin `factoryOf<Int64,...>` 调用违反 `T <: Object` bound; (b) cjc 不传播泛型实参通过 nested generic call (e.g., `factoryOf<R>` 的 R 不能传到 `scope.new<R>(constructor)` 的 R), 即使加 explicit type args 也只能让局部 R 已知, 不能让 `factory`'s lambda 类型与 R 同步.
+- **REVERTED**: 全部 R14 改动 (parser.rs `try_infer_get_type_args_in_scope_new` helper + `parse_fun` 接入点 + lambda 类型标注 `scope: Scope, params: ParametersHolder`) 全部 revert, 回到 R13 549 baseline.
+- **教训（持久化知识）**: reified T 类型字面量簇的修复路径不能从 `Scope.new` body 侧入手 — 每修一层 cascade 浮现下一层. 须从 `Scope.get` 声明侧 (剥离 `<: Object` bound, 因 `Int64` 不满足) 或 call-site inline (`new(constructor)` → `constructor(scope.get<Tn>())` 直接展开 + 跟踪 enclosing function's generic_params) 入手, 不碰 `Scope.new` body.
+- **未触及 R13 baseline**: `try_restructure_koin_dsl_lambda` (R13 helper) 未改, 1f R13 549 + 266/266 单文件 + 36/36 项目全绿仍成立.
+- **战役轮标**: 1f R14 attempt failed (用户指定继续进攻 1f, 非 auto 轮; 不计为已完成的轮次, R14 仍为待攻状态).
+- **R15+ 候选 (重新审视)**:
+  - ① **`get()` 推断 `<T1>` via `Scope.get` 声明侧** — 剥离 `Scope.get<T>` 的 `<: Object` bound (koin Kotlin 源 `<reified T : Any>` 在 Cangjie `Int64` 不满足 `<: Object`, bound 应 strip); 风险: `Scope.get` body 已坏 (recursive `get(qualifier: T, ...)` 本就编译失败), bound 剥离对其他 `get<T>()` callers 中性; **此路径最简, 优先试**
+  - ② **inline `new(constructor)` 在 call site** — `factory { new(constructor) }` 直接展开为 `factory { scope, params => constructor(scope.get<T1>(), ..., scope.get<Tn>()) }`; 须跟踪 enclosing function's generic_params (parser 加 `func_generics: Vec<Vec<String>>` stack); 避免 `Scope.new` generic inference 问题; 但 `Scope.get<Tn>` 仍受 `<: Object` bound 约束, 仍需路径 ①
+  - ③ missing-argument 残 10 (非 trailing-lambda 簇)
+  - ④ appDeclaration() 函数类型变量调用需 .invoke() (undeclared 'invoke' ×7)
+  - ⑤ peek_is_generic_ctor 把小写函数 `c.make<String>` 误判为 `<` 比较
+  - ⑥ expected×83 (reified T 类型字面量簇, 高风险)
+  - ⑦ unimplemented×42 (expect class 抽象方法 stub)
+
+### 2026-07-13 — PARSER_PATTERN — koin-dsl-lambda-receiver 簇（1f R13, 用户指定继续进攻 1f）
+
+- **目标**: 1f koin-core (R13)
+- **错误**: 1f R12 baseline 641 含 `undeclared identifier 'new'` ×92（最大簇，未在 R12 候选列表中——R12 候选列表基于 R11 baseline 543 的 missing-argument 簇 ×37，R12 把 missing-argument 降到 10 后，`new` 簇被级联遮蔽的状态解除，浮现成最大簇）。分布：factory_of.cj ×23 + scoped_factory_of.cj ×23 + single_of.cj ×23 + scoped_of.cj ×23，全部为 `factory(None, { => new(constructor) }).onOptions(...)` / `single(None, false, { => new(constructor) })` / `scoped(None, { => new(constructor) })` 调用。级联：`generic type should be used with type argument` ×92（因 lambda 返回类型未知导致 `None: Option<Qualifier>` 无法推断）。
+- **真根因（一句话）**: Kotlin `inline fun <reified R> Scope.new(constructor: () -> R): R = constructor()` 是 `Scope` 的扩展成员函数；koin DSL `factoryOf`/`singleOf`/`scopedOf` 在 `factory { new(constructor) }` 中调用 `new` 时，trailing lambda 在 Kotlin 是 `Definition<T> = Scope.(ParametersHolder) -> T` (lambda-with-receiver)，body 内 `this` 是 `Scope`，`new(constructor)` 解析为 `Scope.new(constructor)`。仓颉无 lambda-with-receiver 概念，k2cj 把 trailing lambda 渲染为 `{ => new(constructor) }`（无参数绑定），body 内 `new(constructor)` 作为 free function 查找——`new` 是 `extend Scope` 成员，free 查找失败 → "undeclared identifier 'new'"。
+- **探针实证**: `output\probe\new_keyword\probe1.cj` 证实仓颉 1.0.5 中 `new` **不是保留字**——free function `func new<R>(constructor: () -> R): R` 合法、调用 `new<Int64>({ => 42 })` 通过。`output\probe\new_member\probe2.cj` 复现 koin 模式（`extend Scope { func new<R>(...) }` + `extend Module { func factoryOf() { factory(0, { => new(constructor) }) } }`）触发 `undeclared identifier 'new'`，确认根因为 lambda-with-receiver 丢失接收者上下文。
+- **修复（parser.rs, L2 双补丁, +110 行）**:
+  - **新增 helper `try_restructure_koin_dsl_lambda(&mut self, callee: NodeId, args: &mut Vec<NodeId>) -> bool`**: 检测 koin DSL 调用模式：callee 是 NameRef "factory"/"single"/"scoped"（koin Module/ScopeDSL 名），args 末尾是 Lambda，且 lambda params 为空，且 body 是单语句 ExprStmt，且该 expr 是 Call(callee=NameRef "new", ...)。匹配则重构 AST：
+    - 把 Lambda 的 params 从 `[]` 改为 `["scope", "params"]`（绑定接收者+实参）
+    - 把 body 内 `new` Call 的 callee 从 NameRef("new") 改为 Member(base=NameRef("scope"), name="new")
+    - 渲染产物：`{ scope, params => scope.new(constructor) }`
+  - **Call 构造点接入**: `parse_postfix` 中两处 Call 构造点接入 helper——
+    - 行 2408 (parens-with-trailing-lambda `factory(args) { ... }`): `let mut args = self.parse_args()?; self.try_restructure_koin_dsl_lambda(e, &mut args);`
+    - 行 2443 (no-parens trailing-lambda `factory { ... }`): `let mut args = vec![lam]; self.try_restructure_koin_dsl_lambda(e, &mut args);`
+- **不触发边界（保证零误触）**:
+  - 272_trailing_lambda_default 的 `decorate<Int>(b) { x -> x + 100 }`: callee 是 NameRef "decorate" 非 factory/single/scoped → 不触发
+  - 273_non_nullable_default 的 `single<Int>(c) { 42 }`: callee 是 "single" 但 body 是 IntLit `42` 非 Call to NameRef "new" → 不触发
+  - `Type<T> { ... }` 构造（line 2955）: callee 是合成 NameRef `Type<arg>` 非 "factory"/"single"/"scoped" → 不触发
+- **测量**:
+  - **1f**: 641 → **549**（净 -92, -14%）。`undeclared identifier 'new'` ×92→0 -100%（cluster 清零）。同时消除 cascade `generic type should be used with type argument` ×92（因 lambda 类型可推断后 `None: Option<Qualifier>` 推断恢复）。
+  - **新揭示 cascade**（SOC 级联常态）: `'onOptions' is not a member of class 'Object'` ×92。因 `scope.new(constructor)` 调用的 `Scope.new` body 仍含 `constructor(get())`，`get()` 不能推断 `<T1>` (reified T 类型字面量丢失)，导致 `new` 返回类型未知 → `factory` 返回 Object → `.onOptions` 失败。此为下一轮 R14 reified T 簇的 reveals（按 autonomous-strategy "以累计消灭根因簇数计进展"原则，本轮消灭 `new` 簇 100%，新 cascade 是诚实新表面）。
+  - **外溢核对**: 1g 1034→**1032**（-2 漂移, ±3-5 容差内）, 2a 970→**973**（+3 漂移, ±3-5 容差内）。两 target 均无 `factory`/`single`/`scoped`+`new(constructor)` 模式，fix 对它们中性。
+- **测试**: 274_koin_dsl_lambda_receiver（非泛型版 koin DSL: Scope/ParametersHolder 类 + Module.factory/single/scoped 接 `(Scope, ParametersHolder) -> Int` lambda + Scope.new 扩展成员 + factoryOf/singleOf/scopedOf 调用 `factory(null, { new(constructor) })`; main 中 `m.factoryOf({ 42 })` 输出 42/99/7; 验证 restructure 后渲染为 `{ scope, params => scope.new(constructor) }` 且 cjc 编译+运行通过）。回归 **266/266 单文件 + 36/36 项目全绿**（原 265 + 新增 274，原 265 全无回归）。
+- **R14 候选（按杠杆排序）**:
+  - ① **`get()` 推断 `<T1>` in `Scope.new` body**（reified T 类型字面量, 高风险但消除后可清掉 onOptions cascade 92 + unable-infer-generic 22 共 114 错; 路径: 在 `new<R, T1..Tn>` body 中把 `get()` 渲染为 `get<Tn>()` 位置对应; 风险: 仅在 `new` body 内触发, 非通用; 备选: 把 `new` 函数 inline 到 call site 即 `constructor(scope.get<T1..Tn>())` 但需把 `new` 类型参数传递)
+  - ② missing-argument 残 10（5 单参数 in-call + 3 命名参数缺失 + 1 KClass 反射, 已非 trailing-lambda 簇）
+  - ③ appDeclaration() 函数类型变量调用需 .invoke()（undeclared 'invoke' ×7）
+  - ④ peek_is_generic_ctor 把小写函数 `c.make<String>` 误判为 `<` 比较
+  - ⑤ expected×83（reified `T()` 类型字面量簇, 高风险, 仓颉无 reified 概念）
+  - ⑥ unimplemented×42（expect class 抽象方法 stub 注入）
+- **战役轮标**: 1f R13（用户指定继续进攻 1f, 非 auto 轮）。
+
 ### 2026-07-13 — RENDER_GAP — 非 ?T 默认值补值（1f R12 trailing-lambda-default 簇非可空子簇）
 - **目标**: 1f koin-core (R12)
 - **错误**: 1f R11 baseline 619 含 missing-argument×37，其中 23 处是 koin `single(qualifier: Qualifier? = null, createdAtStart: Boolean = false, definition: Definition<T>)` 的 trailing lambda 调用——createdAtStart 是 `Bool = false`（非 ?T），R11 修复时保守要求中间被省略的位置类型以 `?` 开头，createdAtStart 不符合，所以 R11 没修这 23 处。

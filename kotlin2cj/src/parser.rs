@@ -1920,6 +1920,92 @@ impl Parser {
         }
     }
 
+    /// koin DSL 调用模式 `factory { new(constructor) }` / `single(...) { new(constructor) }` /
+    /// `scoped { new(constructor) }` 修复：trailing lambda 的接收者（Scope）在 Kotlin 是
+    /// lambda-with-receiver，仓颉无此概念，调用点 `new(constructor)` 找不到 `Scope.new`
+    /// （`new` 是 `extend Scope` 成员，free lookup 失败 → "undeclared identifier 'new'"）。
+    ///
+    /// 重构 AST：把 trailing lambda 的 params 改为 `["scope", "params"]`（绑定接收者+实参），
+    /// 并把 body 内 `new(constructor)` 的 callee 从 `NameRef("new")` 改为
+    /// `Member(base=NameRef("scope"), name="new")`，渲染为 `scope.new(constructor)`。
+    ///
+    /// 触发条件（同时满足）：
+    /// 1. callee 是 NameRef "factory" / "single" / "scoped"（koin Module/ScopeDSL DSL 名）
+    /// 2. args 末尾是 Lambda，且 params 为空
+    /// 3. lambda body 是单语句 ExprStmt，且该 expr 是 Call(callee=NameRef "new", ...)
+    ///
+    /// 不触发：测试用例 `single(c) { 42 }`（body 非 `new(...)`）；`Type<T> { ... }` 构造
+    /// （callee 是合成 NameRef `Type<...>`，非裸 `single`/`factory`/`scoped`）。
+    fn try_restructure_koin_dsl_lambda(
+        &mut self,
+        callee: NodeId,
+        args: &mut Vec<NodeId>,
+    ) -> bool {
+        let callee_name = match self.g.kind(callee) {
+            Kind::NameRef { original, .. } => original.as_str(),
+            _ => return false,
+        };
+        if !matches!(callee_name, "factory" | "single" | "scoped") {
+            return false;
+        }
+        if args.is_empty() {
+            return false;
+        }
+        let lambda_id = *args.last().unwrap();
+        let body_id = match self.g.kind(lambda_id) {
+            Kind::Lambda { params, body } => {
+                if !params.is_empty() {
+                    return false;
+                }
+                *body
+            }
+            _ => return false,
+        };
+        let stmts = match self.g.kind(body_id) {
+            Kind::Block { stmts } => stmts.clone(),
+            _ => return false,
+        };
+        if stmts.len() != 1 {
+            return false;
+        }
+        let expr_id = match self.g.kind(stmts[0]) {
+            Kind::ExprStmt { expr } => *expr,
+            _ => return false,
+        };
+        let inner_callee_id = match self.g.kind(expr_id) {
+            Kind::Call { callee, .. } => *callee,
+            _ => return false,
+        };
+        let inner_name = match self.g.kind(inner_callee_id) {
+            Kind::NameRef { original, .. } => original.as_str(),
+            _ => return false,
+        };
+        if inner_name != "new" {
+            return false;
+        }
+        // 重构：构造 Member(base=NameRef("scope"), name="new") 作为新 callee
+        let scope_nameref = self.g.add(Kind::NameRef {
+            original: "scope".into(),
+            decl: None,
+        });
+        let new_member_callee = self.g.add(Kind::Member {
+            base: scope_nameref,
+            name: "new".into(),
+            safe: false,
+        });
+        // 把 inner Call 的 callee 从 NameRef("new") 改为 Member(base=NameRef("scope"), "new")
+        if let Kind::Call { callee, .. } = &mut self.g.nodes[expr_id].kind {
+            *callee = new_member_callee;
+        }
+        // 把 Lambda 的 params 改为 ["scope", "params"]
+        if let Kind::Lambda { params, .. } = &mut self.g.nodes[lambda_id].kind {
+            params.clear();
+            params.push("scope".into());
+            params.push("params".into());
+        }
+        true
+    }
+
     fn parse_while(&mut self) -> PResult<NodeId> {
         self.eat_kw("while");
         self.expect_sym("(")?;
@@ -2405,7 +2491,8 @@ impl Parser {
                     });
                 }
             } else if self.is_sym("(") {
-                let args = self.parse_args()?;
+                let mut args = self.parse_args()?;
+                self.try_restructure_koin_dsl_lambda(e, &mut args);
                 e = self.g.add(Kind::Call { callee: e, args });
             } else if self.is_sym("[") {
                 self.bump();
@@ -2443,7 +2530,9 @@ impl Parser {
             } else if self.is_sym("{") && !self.suppress_trailing_lambda {
                 // 无括号尾随 lambda 调用：ident { ... }
                 let lam = self.parse_lambda()?;
-                e = self.g.add(Kind::Call { callee: e, args: vec![lam] });
+                let mut args = vec![lam];
+                self.try_restructure_koin_dsl_lambda(e, &mut args);
+                e = self.g.add(Kind::Call { callee: e, args });
             } else {
                 break;
             }
